@@ -2,17 +2,23 @@
  * API Configuration
  */
 
-// Change this to your backend URL
-// For local dev with Expo Go on phone, use your computer's local IP
-export const API_BASE_URL = __DEV__
-  ? 'http://192.168.1.100:8000'  // Change to your local IP
-  : 'https://your-app.onrender.com';
+import { Platform } from 'react-native';
 
+// Dynamically set API URL based on platform
+const getApiUrl = () => {
+  if (!__DEV__) return 'https://your-app.onrender.com';
+  if (Platform.OS === 'web') return 'http://localhost:8000';
+  if (Platform.OS === 'android') return 'http://10.0.2.2:8000'; // Android Emulator
+  return 'http://localhost:8000'; // iOS Simulator
+};
+
+export const API_BASE_URL = getApiUrl();
 export const WS_BASE_URL = API_BASE_URL.replace('http', 'ws');
 
 export const API_ENDPOINTS = {
   // Auth
   AUTH_GOOGLE: '/auth/google',
+  AUTH_DEV_LOGIN: '/auth/dev-login',
   AUTH_REFRESH: '/auth/refresh',
   AUTH_LOGOUT: '/auth/logout',
 

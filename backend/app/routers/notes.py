@@ -136,7 +136,7 @@ async def update_note(
         .select("id, content")
         .eq("id", note_id)
         .eq("user_id", user["id"])
-        .maybe_single()
+        .limit(1)
         .execute()
     )
     if not existing.data:
@@ -157,12 +157,11 @@ async def update_note(
             supabase.table("notes")
             .update(update_data)
             .eq("id", note_id)
-            .single()
             .execute()
         )
 
     # Re-embed if content changed
-    if update.content is not None and update.content != existing.data["content"]:
+    if update.content is not None and update.content != existing.data[0]["content"]:
         # Delete old chunks
         supabase.table("note_chunks").delete().eq("note_id", note_id).execute()
 
@@ -215,7 +214,7 @@ async def delete_note(
         .select("id")
         .eq("id", note_id)
         .eq("user_id", user["id"])
-        .maybe_single()
+        .limit(1)
         .execute()
     )
     if not existing.data:
@@ -259,6 +258,7 @@ async def search_notes(
 class UrlImportRequest(BaseModel):
     url: str
     tags: list[str] = []
+    description: Optional[str] = None
 
 
 @router.post("/import/url", response_model=dict, status_code=status.HTTP_201_CREATED)
@@ -273,6 +273,7 @@ async def import_url(
         user_id=user["id"],
         url=request.url,
         tags=request.tags,
+        description=request.description,
     )
     return result
 

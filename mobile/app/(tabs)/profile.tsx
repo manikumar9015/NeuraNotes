@@ -39,15 +39,29 @@ export default function ProfileScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* User Card */}
-      <View style={styles.userCard}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {user?.name?.charAt(0)?.toUpperCase() || '?'}
-          </Text>
+      {!user ? (
+        <View style={styles.userCard}>
+          <Text style={styles.userName}>Not logged in</Text>
+          <Text style={styles.userEmail}>Sign in to use NeuraNotes</Text>
+          <TouchableOpacity 
+            style={[styles.logoutButton, { backgroundColor: Colors.primary + '15', borderColor: Colors.primary + '30', marginTop: Spacing.md }]} 
+            onPress={useAuthStore.getState().devLogin}
+          >
+            <FontAwesome name="check-circle" size={16} color={Colors.primary} />
+            <Text style={[styles.logoutText, { color: Colors.primary }]}>Quick Test Login</Text>
+          </TouchableOpacity>
         </View>
-        <Text style={styles.userName}>{user?.name || 'NeuraNotes User'}</Text>
-        <Text style={styles.userEmail}>{user?.email || 'No email'}</Text>
-      </View>
+      ) : (
+        <View style={styles.userCard}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>
+              {user?.name?.charAt(0)?.toUpperCase() || '?'}
+            </Text>
+          </View>
+          <Text style={styles.userName}>{user?.name || 'NeuraNotes User'}</Text>
+          <Text style={styles.userEmail}>{user?.email || 'No email'}</Text>
+        </View>
+      )}
 
       {/* Stats */}
       <View style={styles.statsRow}>

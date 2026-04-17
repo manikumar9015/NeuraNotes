@@ -11,7 +11,7 @@ import {
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { useNotesStore } from '@/stores/notesStore';
-import NoteCard from '@/components/NoteCard';
+// NoteCard import removed
 
 export default function SearchScreen() {
   const [query, setQuery] = useState('');

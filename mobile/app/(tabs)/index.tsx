@@ -83,7 +83,7 @@ export default function HomeScreen() {
       {/* Recent Notes */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Recent Notes</Text>
-        <TouchableOpacity onPress={() => router.push('/search')}>
+        <TouchableOpacity onPress={() => router.push('/all-notes')}>
           <Text style={styles.seeAll}>See all →</Text>
         </TouchableOpacity>
       </View>
@@ -92,7 +92,7 @@ export default function HomeScreen() {
         <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 40 }} />
       ) : notes.length === 0 ? (
         <View style={styles.emptyState}>
-          <FontAwesome name="brain" size={48} color={Colors.textMuted} />
+          <FontAwesome name="lightbulb-o" size={48} color={Colors.textMuted} />
           <Text style={styles.emptyTitle}>Your brain is empty</Text>
           <Text style={styles.emptySubtitle}>
             Capture your first note to get started

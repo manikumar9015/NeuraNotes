@@ -14,8 +14,9 @@ import {
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { useNotesStore } from '@/stores/notesStore';
+import * as DocumentPicker from 'expo-document-picker';
 
-type CaptureMode = 'text' | 'url' | 'voice';
+type CaptureMode = 'text' | 'url' | 'pdf' | 'voice';
 
 export default function CaptureScreen() {
   const [mode, setMode] = useState<CaptureMode>('text');
@@ -25,13 +26,15 @@ export default function CaptureScreen() {
   const [tagInput, setTagInput] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [selectedPdf, setSelectedPdf] = useState<{ uri: string; name: string } | null>(null);
   const contentRef = useRef<TextInput>(null);
 
-  const { createNote, importUrl } = useNotesStore();
+  const { createNote, importUrl, importPdf } = useNotesStore();
 
   const modes = [
     { key: 'text' as const, icon: 'file-text-o' as const, label: 'Text', color: Colors.typeText },
     { key: 'url' as const, icon: 'link' as const, label: 'URL', color: Colors.typeUrl },
+    { key: 'pdf' as const, icon: 'file-pdf-o' as const, label: 'PDF', color: Colors.typePdf },
     { key: 'voice' as const, icon: 'microphone' as const, label: 'Voice', color: Colors.typeVoice },
   ];
 
@@ -55,11 +58,29 @@ export default function CaptureScreen() {
       }
       setSaving(true);
       try {
-        await importUrl(url.trim(), tags);
+        await importUrl(url.trim(), tags, content.trim() || undefined);
         Alert.alert('Success', 'URL imported successfully!');
         resetForm();
       } catch (e: any) {
         Alert.alert('Error', e.message || 'Failed to import URL');
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    if (mode === 'pdf') {
+      if (!selectedPdf) {
+        Alert.alert('Error', 'Please select a PDF file first');
+        return;
+      }
+      setSaving(true);
+      try {
+        await importPdf(selectedPdf.uri, selectedPdf.name, tags);
+        Alert.alert('Success', 'PDF imported successfully! 📄');
+        resetForm();
+      } catch (e: any) {
+        Alert.alert('Error', e.message || 'Failed to import PDF');
       } finally {
         setSaving(false);
       }
@@ -94,6 +115,22 @@ export default function CaptureScreen() {
     setUrl('');
     setTags([]);
     setTagInput('');
+    setSelectedPdf(null);
+  };
+
+  const handlePickPdf = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/pdf',
+        copyToCacheDirectory: true,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        setSelectedPdf({ uri: asset.uri, name: asset.name });
+      }
+    } catch (e) {
+      Alert.alert('Error', 'Could not pick file');
+    }
   };
 
   return (
@@ -133,18 +170,32 @@ export default function CaptureScreen() {
 
         {/* URL Input */}
         {mode === 'url' && (
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>URL</Text>
-            <TextInput
-              style={styles.input}
-              value={url}
-              onChangeText={setUrl}
-              placeholder="https://example.com/article"
-              placeholderTextColor={Colors.textMuted}
-              keyboardType="url"
-              autoCapitalize="none"
-            />
-          </View>
+          <>
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>URL</Text>
+              <TextInput
+                style={styles.input}
+                value={url}
+                onChangeText={setUrl}
+                placeholder="https://example.com/article"
+                placeholderTextColor={Colors.textMuted}
+                keyboardType="url"
+                autoCapitalize="none"
+              />
+            </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Description (optional)</Text>
+              <TextInput
+                style={[styles.input, { minHeight: 80 }]}
+                value={content}
+                onChangeText={setContent}
+                placeholder="Add context or notes about this link..."
+                placeholderTextColor={Colors.textMuted}
+                multiline
+                textAlignVertical="top"
+              />
+            </View>
+          </>
         )}
 
         {/* Voice Mode */}
@@ -162,8 +213,38 @@ export default function CaptureScreen() {
           </View>
         )}
 
+        {/* PDF Mode */}
+        {mode === 'pdf' && (
+          <View style={styles.pdfSection}>
+            <TouchableOpacity
+              style={[styles.pdfPickerButton, selectedPdf && styles.pdfPickerButtonSelected]}
+              onPress={handlePickPdf}
+              activeOpacity={0.7}
+            >
+              <View style={styles.pdfIconCircle}>
+                <FontAwesome
+                  name={selectedPdf ? 'check-circle' : 'file-pdf-o'}
+                  size={32}
+                  color={selectedPdf ? Colors.success : Colors.typePdf}
+                />
+              </View>
+              {selectedPdf ? (
+                <>
+                  <Text style={styles.pdfFilename} numberOfLines={2}>{selectedPdf.name}</Text>
+                  <Text style={styles.pdfChangeHint}>Tap to change file</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.pdfHint}>Tap to choose a PDF</Text>
+                  <Text style={styles.pdfSubhint}>Max 10MB · Text will be extracted and indexed</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Text Mode */}
-        {mode !== 'voice' && mode !== 'url' && (
+        {mode !== 'voice' && mode !== 'url' && mode !== 'pdf' && (
           <>
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Title (optional)</Text>
@@ -241,7 +322,7 @@ export default function CaptureScreen() {
             <>
               <FontAwesome name="bolt" size={16} color={Colors.text} />
               <Text style={styles.saveButtonText}>
-                {mode === 'url' ? 'Import URL' : 'Capture Note'}
+                {mode === 'url' ? 'Import URL' : mode === 'pdf' ? 'Import PDF' : 'Capture Note'}
               </Text>
             </>
           )}
@@ -393,5 +474,54 @@ const styles = StyleSheet.create({
     fontSize: FontSize.lg,
     fontWeight: FontWeight.bold,
     color: Colors.text,
+  },
+  // PDF Mode
+  pdfSection: {
+    alignItems: 'center',
+    paddingVertical: Spacing.xl,
+  },
+  pdfPickerButton: {
+    width: '100%',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.xl,
+    borderWidth: 2,
+    borderColor: Colors.typePdf + '40',
+    borderStyle: 'dashed',
+    gap: Spacing.sm,
+  },
+  pdfPickerButtonSelected: {
+    borderColor: Colors.success + '80',
+    backgroundColor: Colors.success + '10',
+  },
+  pdfIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: Colors.typePdf + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.sm,
+  },
+  pdfHint: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.semibold,
+    color: Colors.text,
+  },
+  pdfSubhint: {
+    fontSize: FontSize.sm,
+    color: Colors.textMuted,
+    textAlign: 'center',
+  },
+  pdfFilename: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
+    color: Colors.text,
+    textAlign: 'center',
+  },
+  pdfChangeHint: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
   },
 });

@@ -5,6 +5,7 @@ Ensures proper citations and mobile-friendly formatting.
 
 from app.models.conversation import ExecutionPlan, SubtaskStatus
 from app.services.ai_client import get_ai_client
+from app.services.agent.prompts import load_prompt
 
 
 async def synthesize_results(
@@ -47,25 +48,15 @@ async def synthesize_results(
         failure_parts = [f"- {st.description}: {st.error or 'Unknown error'}" for st in failed]
         failure_notices = f"\n\n**Note:** The following steps could not be completed:\n" + "\n".join(failure_parts)
 
-    synthesis_prompt = f"""You are synthesizing results from multiple steps into a single coherent response.
-
-The user's original request was: "{original_query}"
-
-Here are the results from each completed step:
-
-{chr(10).join(results_context)}
-{failure_notices}
-
-Instructions:
-1. Combine all results into a natural, coherent response
-2. Maintain all citations and references to source notes
-3. Format for mobile reading (concise paragraphs, bullet points)
-4. If some steps failed, acknowledge it briefly
-5. Do NOT repeat the step descriptions — integrate the information naturally
-6. Use markdown formatting"""
+    synthesis_prompt = (
+        load_prompt("synthesizer")
+        + f'\n\nUser\'s original request: "{original_query}"\n\n'
+        + "\n\n".join(results_context)
+        + failure_notices
+    )
 
     response = await ai_client.chat(
-        system_prompt="You are a response synthesizer. Merge multiple outputs into one coherent answer.",
+        system_prompt=load_prompt("synthesizer"),
         messages=[{"role": "user", "content": synthesis_prompt}],
         max_tokens=2000,
     )

@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS note_chunks (
     chunk_index INTEGER NOT NULL,
     content     TEXT NOT NULL,
     token_count INTEGER,
-    embedding   VECTOR(3072),  -- gemini-embedding-001 dimensions
+    embedding   VECTOR(768),  -- gemini-embedding-001/text-embedding-004 dimensions
     created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -115,7 +115,7 @@ CREATE INDEX IF NOT EXISTS idx_note_chunks_embedding
 
 -- Semantic search function — called via Supabase RPC
 CREATE OR REPLACE FUNCTION match_chunks(
-    query_embedding VECTOR(3072),
+    query_embedding VECTOR(768),
     match_threshold FLOAT DEFAULT 0.5,
     match_count INT DEFAULT 20,
     filter_user_id UUID DEFAULT NULL,

@@ -40,6 +40,7 @@ interface ChatState {
   loadMessages: (conversationId: string) => Promise<void>;
   sendMessage: (conversationId: string, content: string) => Promise<void>;
   setCurrentConversation: (id: string | null) => void;
+  deleteConversation: (id: string) => Promise<void>;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -128,4 +129,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   setCurrentConversation: (id) => set({ currentConversation: id }),
+
+  deleteConversation: async (id) => {
+    try {
+      await api.delete(`${API_ENDPOINTS.CONVERSATIONS}/${id}`);
+      set({ 
+        conversations: get().conversations.filter(c => c.id !== id),
+        currentConversation: get().currentConversation === id ? null : get().currentConversation
+      });
+    } catch (error: any) {
+      set({ error: error.message });
+      throw error;
+    }
+  },
 }));

@@ -1,6 +1,6 @@
 """
 Embedding Service — generates embeddings via Google AI Studio and stores in Supabase pgvector.
-Uses gemini-embedding-001 (3072 dimensions, free tier).
+Uses text-embedding-004 (768 dimensions, free tier).
 """
 
 import asyncio
@@ -13,7 +13,7 @@ from app.db.supabase_client import get_supabase_admin
 
 # ── Constants ──────────────────────────────────────────────
 EMBEDDING_MODEL = "gemini-embedding-001"
-EMBEDDING_DIMENSIONS = 3072
+EMBEDDING_DIMENSIONS = 768
 BATCH_SIZE = 20  # Max texts per API call
 MAX_RETRIES = 3
 RETRY_DELAY = 1.0  # seconds
@@ -22,9 +22,9 @@ RETRY_DELAY = 1.0  # seconds
 async def generate_embedding(text: str) -> list[float]:
     """
     Generate a single embedding vector for a text string.
-    Uses Google AI Studio's gemini-embedding-001 model.
+    Uses Google AI Studio's gemini-embedding-001 model with dimensionality set to 768 to match our DB schema.
     
-    Returns a list of 3072 floats.
+    Returns a list of 768 floats.
     """
     if not settings.google_ai_api_key:
         raise ValueError("GOOGLE_AI_API_KEY must be set in .env")
@@ -39,6 +39,7 @@ async def generate_embedding(text: str) -> list[float]:
         "content": {
             "parts": [{"text": text}]
         },
+        "outputDimensionality": EMBEDDING_DIMENSIONS,
     }
 
     for attempt in range(MAX_RETRIES):

@@ -52,7 +52,9 @@ interface NotesState {
   updateNote: (id: string, data: Partial<Note>) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
   searchNotes: (query: string) => Promise<void>;
-  importUrl: (url: string, tags?: string[]) => Promise<Note>;
+  importUrl: (url: string, tags?: string[], description?: string) => Promise<Note>;
+  importPdf: (fileUri: string, filename: string, tags?: string[]) => Promise<Note>;
+  importVoice: (fileUri: string, filename: string, tags?: string[]) => Promise<Note>;
   clearSearch: () => void;
 }
 
@@ -128,10 +130,34 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     }
   },
 
-  importUrl: async (url, tags = []) => {
+  importUrl: async (url, tags = [], description?: string) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await api.post(API_ENDPOINTS.NOTES_IMPORT_URL, { url, tags });
+      const response = await api.post(API_ENDPOINTS.NOTES_IMPORT_URL, { url, tags, description });
+      const newNote = response.data;
+      set({ notes: [newNote, ...get().notes], isLoading: false });
+      return newNote;
+    } catch (error: any) {
+      set({ error: error.message, isLoading: false });
+      throw error;
+    }
+  },
+
+  importPdf: async (fileUri, filename, tags = []) => {
+    set({ isLoading: true, error: null });
+    try {
+      const formData = new FormData();
+      formData.append('file', {
+        uri: fileUri,
+        name: filename,
+        type: 'application/pdf',
+      } as any);
+      if (tags.length > 0) {
+        formData.append('tags', tags.join(','));
+      }
+      const response = await api.post(API_ENDPOINTS.NOTES_IMPORT_PDF, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       const newNote = response.data;
       set({ notes: [newNote, ...get().notes], isLoading: false });
       return newNote;

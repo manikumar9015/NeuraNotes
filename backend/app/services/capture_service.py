@@ -45,8 +45,8 @@ async def capture_text(
         "metadata": metadata or {},
     }
 
-    result = supabase.table("notes").insert(note_data).single().execute()
-    note = result.data
+    result = supabase.table("notes").insert(note_data).execute()
+    note = result.data[0]
     note_id = note["id"]
 
     # Chunk the content for embedding
@@ -85,15 +85,21 @@ async def capture_url(
     user_id: str,
     url: str,
     tags: Optional[list[str]] = None,
+    description: Optional[str] = None,
 ) -> dict:
     """Capture a note from a URL — scrape, extract text, chunk, embed."""
     from app.utils.url_scraper import scrape_url
 
     extracted = await scrape_url(url)
+    
+    # Prepend the user's description if provided
+    final_content = extracted["content"]
+    if description:
+        final_content = f"{description}\n\n{final_content}"
 
     return await capture_text(
         user_id=user_id,
-        content=extracted["content"],
+        content=final_content,
         title=extracted.get("title"),
         content_type=ContentType.URL,
         source_url=url,
@@ -102,6 +108,7 @@ async def capture_url(
             "author": extracted.get("author"),
             "publish_date": extracted.get("publish_date"),
             "word_count_original": extracted.get("word_count"),
+            "user_description": description,
         },
     )
 
@@ -178,12 +185,12 @@ async def get_note_with_details(note_id: str, user_id: str) -> dict:
         .select("*")
         .eq("id", note_id)
         .eq("user_id", user_id)
-        .single()
+        .limit(1)
         .execute()
     )
-    note = note_result.data
-    if not note:
+    if not note_result.data:
         return None
+    note = note_result.data[0]
 
     # Get tags
     tag_result = (
@@ -219,20 +226,19 @@ async def _apply_tags(supabase, user_id: str, note_id: str, tag_names: list[str]
             .select("id")
             .eq("user_id", user_id)
             .eq("name", tag_name)
-            .maybe_single()
+            .limit(1)
             .execute()
         )
 
         if existing.data:
-            tag_id = existing.data["id"]
+            tag_id = existing.data[0]["id"]
         else:
             new_tag = (
                 supabase.table("tags")
                 .insert({"user_id": user_id, "name": tag_name})
-                .single()
                 .execute()
             )
-            tag_id = new_tag.data["id"]
+            tag_id = new_tag.data[0]["id"]
 
         # Link tag to note (ignore if already linked)
         try:

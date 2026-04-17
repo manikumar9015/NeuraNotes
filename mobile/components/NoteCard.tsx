@@ -1,13 +1,16 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { useNotesStore } from '@/stores/notesStore';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 interface Note {
   id: string;
   title: string;
   content: string;
   content_type: string;
+  source_url?: string;
   word_count: number;
   created_at: string;
   tags: Array<{ id: string; name: string; color: string }>;
@@ -22,49 +25,96 @@ const TYPE_CONFIG: Record<string, { icon: any; color: string }> = {
 };
 
 export default function NoteCard({ note }: { note: Note }) {
+  const [dialogVisible, setDialogVisible] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const { deleteNote } = useNotesStore();
   const config = TYPE_CONFIG[note.content_type] || TYPE_CONFIG.text;
   const date = new Date(note.created_at);
   const timeAgo = getTimeAgo(date);
 
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      await deleteNote(note.id);
+      setDialogVisible(false);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to delete note');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
-    <TouchableOpacity style={styles.card} activeOpacity={0.7}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={[styles.typeBadge, { backgroundColor: config.color + '20' }]}>
-          <FontAwesome name={config.icon} size={12} color={config.color} />
+    <>
+      <TouchableOpacity style={styles.card} activeOpacity={0.7}>
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={[styles.typeBadge, { backgroundColor: config.color + '20' }]}>
+            <FontAwesome name={config.icon} size={12} color={config.color} />
+          </View>
+          <View style={styles.headerRight}>
+            <Text style={styles.timeAgo}>{timeAgo}</Text>
+            <TouchableOpacity 
+              onPress={(e) => {
+                e.stopPropagation();
+                setDialogVisible(true);
+              }}
+              style={styles.deleteButton}
+              activeOpacity={0.7}
+            >
+              <FontAwesome name="trash" size={14} color={Colors.textMuted} />
+            </TouchableOpacity>
+          </View>
         </View>
-        <Text style={styles.timeAgo}>{timeAgo}</Text>
-      </View>
 
-      {/* Title */}
-      <Text style={styles.title} numberOfLines={1}>
-        {note.title || 'Untitled'}
-      </Text>
+        {/* Title */}
+        <Text style={styles.title} numberOfLines={1}>
+          {note.title || 'Untitled'}
+        </Text>
 
-      {/* Content Preview */}
-      <Text style={styles.contentPreview} numberOfLines={2}>
-        {note.content}
-      </Text>
-
-      {/* Footer */}
-      <View style={styles.footer}>
-        {note.tags && note.tags.length > 0 && (
-          <View style={styles.tagsRow}>
-            {note.tags.slice(0, 3).map((tag) => (
-              <Text key={tag.id || tag.name} style={styles.tag}>
-                #{tag.name}
-              </Text>
-            ))}
-            {note.tags.length > 3 && (
-              <Text style={styles.tagMore}>+{note.tags.length - 3}</Text>
-            )}
+        {/* Display external URL if present */}
+        {note.source_url && (
+          <View style={styles.urlContainer}>
+            <FontAwesome name="external-link" size={10} color={Colors.typeUrl} />
+            <Text style={styles.urlText} numberOfLines={1}>{note.source_url}</Text>
           </View>
         )}
-        <Text style={styles.wordCount}>{note.word_count} words</Text>
-      </View>
-    </TouchableOpacity>
+
+        {/* Content Preview */}
+        <Text style={styles.contentPreview} numberOfLines={2}>
+          {note.content}
+        </Text>
+
+        {/* Footer */}
+        <View style={styles.footer}>
+          {note.tags && note.tags.length > 0 && (
+            <View style={styles.tagsRow}>
+              {note.tags.slice(0, 3).map((tag) => (
+                <Text key={tag.id || tag.name} style={styles.tag}>
+                  #{tag.name}
+                </Text>
+              ))}
+              {note.tags.length > 3 && (
+                <Text style={styles.tagMore}>+{note.tags.length - 3}</Text>
+              )}
+            </View>
+          )}
+          <Text style={styles.wordCount}>{note.word_count} words</Text>
+        </View>
+      </TouchableOpacity>
+
+      <ConfirmDialog
+        visible={dialogVisible}
+        title="Delete Note"
+        message="Are you sure you want to delete this note? This action cannot be undone."
+        confirmText={isDeleting ? "Deleting..." : "Delete"}
+        onConfirm={handleDelete}
+        onCancel={() => setDialogVisible(false)}
+      />
+    </>
   );
 }
+
 
 function getTimeAgo(date: Date): string {
   const now = new Date();
@@ -95,6 +145,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: Spacing.sm,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  deleteButton: {
+    padding: Spacing.xs,
   },
   typeBadge: {
     flexDirection: 'row',
@@ -141,5 +199,16 @@ const styles = StyleSheet.create({
   wordCount: {
     fontSize: FontSize.xs,
     color: Colors.textMuted,
+  },
+  urlContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginBottom: Spacing.xs,
+  },
+  urlText: {
+    fontSize: FontSize.xs,
+    color: Colors.typeUrl,
+    flex: 1,
   },
 });

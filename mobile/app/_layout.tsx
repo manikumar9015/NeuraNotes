@@ -62,22 +62,61 @@ function RootLayoutNav() {
   return (
     <ThemeProvider value={NeuraDarkTheme}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.background} />
-      <Stack
-        screenOptions={{
-          headerStyle: { backgroundColor: Colors.backgroundSecondary },
-          headerTintColor: Colors.text,
-          contentStyle: { backgroundColor: Colors.background },
-        }}
-      >
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen
-          name="modal"
-          options={{
-            presentation: 'modal',
-            headerTitle: 'Note Detail',
-          }}
-        />
-      </Stack>
+      <AuthGateway />
     </ThemeProvider>
   );
 }
+
+// Separate component so we can use router hooks safely
+import { useSegments, useRouter } from 'expo-router';
+
+function AuthGateway() {
+  const { isAuthenticated, isLoading } = useAuthStore();
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isLoading) return;
+
+    const inAuthGroup = segments[0] === 'login';
+
+    if (!isAuthenticated && !inAuthGroup) {
+      // Redirect to login if unauthenticated
+      router.replace('/login');
+    } else if (isAuthenticated && inAuthGroup) {
+      // Redirect to tabs if authenticated
+      router.replace('/(tabs)');
+    }
+  }, [isAuthenticated, isLoading, segments]);
+
+  if (isLoading) {
+    return null; // or a nice splash screen
+  }
+
+  return (
+    <Stack
+      screenOptions={{
+        headerStyle: { backgroundColor: Colors.backgroundSecondary },
+        headerTintColor: Colors.text,
+        contentStyle: { backgroundColor: Colors.background },
+      }}
+    >
+      <Stack.Screen name="login" options={{ headerShown: false }} />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="modal"
+        options={{
+          presentation: 'modal',
+          headerTitle: 'Note Detail',
+        }}
+      />
+      <Stack.Screen 
+        name="all-notes" 
+        options={{ 
+          headerTitle: 'All Notes',
+        }} 
+      />
+    </Stack>
+  );
+}
+

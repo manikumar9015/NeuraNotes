@@ -81,19 +81,17 @@ async def google_auth(request: GoogleAuthRequest):
             supabase.table("users")
             .select("*")
             .eq("google_id", google_id)
-            .maybe_single()
             .execute()
         )
 
-        if existing.data:
+        if existing.data and len(existing.data) > 0:
             # Update existing user
             user = (
                 supabase.table("users")
                 .update({"name": name, "avatar_url": avatar_url})
-                .eq("id", existing.data["id"])
-                .single()
+                .eq("id", existing.data[0]["id"])
                 .execute()
-            ).data
+            ).data[0]
         else:
             # Create new user
             user = (
@@ -104,9 +102,8 @@ async def google_auth(request: GoogleAuthRequest):
                     "avatar_url": avatar_url,
                     "google_id": google_id,
                 })
-                .single()
                 .execute()
-            ).data
+            ).data[0]
 
         # Generate JWT tokens
         token_data = {"sub": user["id"], "email": user["email"]}
@@ -151,7 +148,7 @@ async def refresh_token(request: RefreshRequest):
         supabase.table("users")
         .select("*")
         .eq("id", user_id)
-        .maybe_single()
+        .limit(1)
         .execute()
     )
 
@@ -172,7 +169,7 @@ async def refresh_token(request: RefreshRequest):
         access_token=new_access,
         refresh_token=new_refresh,
         expires_in=settings.access_token_expire_minutes * 60,
-        user=result.data,
+        user=result.data[0],
     )
 
 
@@ -184,3 +181,44 @@ async def logout(user: dict = Depends(get_current_user)):
     a token blacklist in Redis. For now, the client simply discards the token.
     """
     return {"message": "Logged out successfully", "user_id": user["id"]}
+
+
+@router.post("/dev-login", response_model=TokenResponse)
+async def dev_login():
+    """Create a temporary test user for local development without Google OAuth."""
+    supabase = get_supabase_admin()
+    
+    # Check if dev user exists
+    existing = (
+        supabase.table("users")
+        .select("*")
+        .eq("email", "dev@neuranotes.com")
+        .execute()
+    )
+    
+    if existing.data and len(existing.data) > 0:
+        user = existing.data[0]
+    else:
+        user = (
+            supabase.table("users")
+            .insert({
+                "email": "dev@neuranotes.com",
+                "name": "Dev User",
+                "google_id": "dev_mock_id",
+            })
+            .execute()
+        ).data[0]
+        
+    # Issue new tokens
+    token_data = {"sub": user["id"], "email": user["email"]}
+    from app.core.security import create_access_token, create_refresh_token
+    new_access = create_access_token(token_data)
+    new_refresh = create_refresh_token(token_data)
+    
+    from app.core.config import settings
+    return TokenResponse(
+        access_token=new_access,
+        refresh_token=new_refresh,
+        expires_in=settings.access_token_expire_minutes * 60,
+        user=user,
+    )

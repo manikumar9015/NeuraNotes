@@ -9,15 +9,22 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { useChatStore } from '@/stores/chatStore';
 import ChatBubble from '@/components/ChatBubble';
+import ConfirmDialog from '@/components/ConfirmDialog';
 
 export default function ChatScreen() {
   const [input, setInput] = useState('');
   const flatListRef = useRef<FlatList>(null);
+  
+  const [dialogVisible, setDialogVisible] = useState(false);
+  const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const {
     conversations,
     currentConversation,
@@ -29,6 +36,7 @@ export default function ChatScreen() {
     loadMessages,
     sendMessage,
     setCurrentConversation,
+    deleteConversation,
   } = useChatStore();
 
   const [showConversationList, setShowConversationList] = useState(true);
@@ -62,6 +70,25 @@ export default function ChatScreen() {
   const handleBack = () => {
     setShowConversationList(true);
     setCurrentConversation(null);
+  };
+
+  const confirmDeleteConversation = (id: string) => {
+    setConversationToDelete(id);
+    setDialogVisible(true);
+  };
+
+  const handleDeleteConversation = async () => {
+    if (!conversationToDelete) return;
+    setIsDeleting(true);
+    try {
+      await deleteConversation(conversationToDelete);
+      setDialogVisible(false);
+      setConversationToDelete(null);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to delete conversation');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   // Conversation List View
@@ -103,11 +130,29 @@ export default function ChatScreen() {
                     {item.message_count} messages · {new Date(item.updated_at).toLocaleDateString()}
                   </Text>
                 </View>
-                <FontAwesome name="chevron-right" size={12} color={Colors.textMuted} />
+                
+                <TouchableOpacity 
+                  style={{ padding: Spacing.sm }}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    confirmDeleteConversation(item.id);
+                  }}
+                >
+                  <FontAwesome name="trash" size={16} color={Colors.typePdf} />
+                </TouchableOpacity>
               </TouchableOpacity>
             )}
           />
         )}
+
+        <ConfirmDialog
+          visible={dialogVisible}
+          title="Delete Conversation"
+          message="Are you sure you want to delete this conversation? This action cannot be undone."
+          confirmText={isDeleting ? "Deleting..." : "Delete"}
+          onConfirm={handleDeleteConversation}
+          onCancel={() => setDialogVisible(false)}
+        />
       </View>
     );
   }

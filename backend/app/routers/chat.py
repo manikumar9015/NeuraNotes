@@ -38,10 +38,9 @@ async def create_conversation(
             "user_id": user["id"],
             "title": body.title or "New Conversation",
         })
-        .single()
         .execute()
     )
-    return result.data
+    return result.data[0]
 
 
 @router.get("/conversations", response_model=dict)
@@ -121,6 +120,34 @@ async def get_messages(
         "limit": limit,
     }
 
+@router.delete("/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_conversation(
+    conversation_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """Delete a conversation and all its messages."""
+    supabase = get_supabase_admin()
+
+    # Verify ownership
+    conv = (
+        supabase.table("conversations")
+        .select("id")
+        .eq("id", conversation_id)
+        .eq("user_id", user["id"])
+        .limit(1)
+        .execute()
+    )
+    if not conv.data:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # Delete conversation (Cascade will delete messages)
+    (
+        supabase.table("conversations")
+        .delete()
+        .eq("id", conversation_id)
+        .execute()
+    )
+    return None
 
 # ── Send Message (Main Chat Endpoint) ──────────────────────
 
@@ -147,7 +174,7 @@ async def send_message(
         .select("id")
         .eq("id", conversation_id)
         .eq("user_id", user["id"])
-        .maybe_single()
+        .limit(1)
         .execute()
     )
     if not conv.data:
@@ -161,7 +188,6 @@ async def send_message(
             "role": MessageRole.USER.value,
             "content": body.content,
         })
-        .single()
         .execute()
     )
 
@@ -211,7 +237,6 @@ async def send_message(
                 else []
             ),
         })
-        .single()
         .execute()
     )
 
@@ -228,8 +253,8 @@ async def send_message(
     ).eq("id", conversation_id).execute()
 
     return {
-        "user_message": user_msg.data,
-        "assistant_message": assistant_msg.data,
+        "user_message": user_msg.data[0],
+        "assistant_message": assistant_msg.data[0],
         "execution_plan": result.get("execution_plan"),
     }
 
@@ -279,7 +304,7 @@ async def websocket_chat(
                 .select("id")
                 .eq("id", conversation_id)
                 .eq("user_id", user_id)
-                .maybe_single()
+                .limit(1)
                 .execute()
             )
             if not conv.data:
@@ -332,12 +357,12 @@ async def websocket_chat(
                     "role": "assistant",
                     "content": response_text,
                     "sources": result.get("sources", []),
-                }).single().execute()
+                }).execute()
 
                 # Send done signal
                 await websocket.send_json({
                     "type": "done",
-                    "message": msg.data,
+                    "message": msg.data[0],
                     "sources": result.get("sources", []),
                 })
 

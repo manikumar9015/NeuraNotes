@@ -25,6 +25,8 @@ interface AuthState {
   login: (user: User, accessToken: string, refreshToken: string) => void;
   logout: () => void;
   loadStoredAuth: () => Promise<void>;
+  devLogin: () => Promise<void>;
+  googleLogin: (idToken: string) => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -33,6 +35,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   refreshToken: null,
   isAuthenticated: false,
   isLoading: true,
+
+  googleLogin: async (idToken: string) => {
+    try {
+      const api = (await import('@/services/api')).default;
+      const { API_ENDPOINTS } = await import('@/constants/api');
+      const response = await api.post(API_ENDPOINTS.AUTH_GOOGLE, { id_token: idToken });
+      const { user, access_token, refresh_token } = response.data;
+      get().login(user, access_token, refresh_token);
+    } catch (error: any) {
+      console.error('Google login failed:', error.response?.data || error.message);
+      throw new Error(error.response?.data?.detail || 'Failed to authenticate with Google');
+    }
+  },
+
+  devLogin: async () => {
+    try {
+      const api = (await import('@/services/api')).default;
+      const { API_ENDPOINTS } = await import('@/constants/api');
+      const response = await api.post(API_ENDPOINTS.AUTH_DEV_LOGIN);
+      const { user, access_token, refresh_token } = response.data;
+      get().login(user, access_token, refresh_token);
+    } catch (error) {
+      console.error('Dev login failed:', error);
+    }
+  },
 
   setTokens: (accessToken, refreshToken) => {
     set({ accessToken, refreshToken });

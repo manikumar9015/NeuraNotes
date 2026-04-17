@@ -33,9 +33,10 @@ app = FastAPI(
 )
 
 # ── CORS Middleware ─────────────────────────────────────────
+# In development, allow all origins so Expo web on any port can connect
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=["*"] if settings.is_development else settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
