@@ -1,0 +1,610 @@
+# NeuraNotes — Complete Implementation Plan
+
+> Personal Second Brain Agent · Mobile-First · AI-Powered · Offline-Capable
+
+## Overview
+
+Build NeuraNotes end-to-end: a **FastAPI backend** + **React Native (Expo) mobile app** powered by **Groq (Llama 3.3 70B + GPT-OSS 120B)** and **Supabase**, running at **$0/month** on free tiers.
+
+This plan is organized into **12 granular phases**, each with clear deliverables, file-by-file details, and verification steps.
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Embedding Model Change**: Your design doc references `text-embedding-004` (Google AI Studio, 768-dim). That model was **shut down on January 14, 2026**. I will use **`gemini-embedding-001`** (Google AI Studio, 3072-dim, free tier) instead. This affects vector dimensions in pgvector and Qdrant schemas. Confirm this is acceptable.
+
+> [!IMPORTANT]
+> **Agent Task Decomposition (Your Requested Enhancement)**: The original design has the agent as a single-pass responder. Per your request, I will implement an **Orchestrator → Planner → Executor** pattern where:
+> 1. User input → **Orchestrator** classifies intent and complexity
+> 2. If complex → **Planner** decomposes into ordered subtasks with dependencies
+> 3. **Executor** processes each subtask sequentially, accumulating context
+> 4. **Synthesizer** merges subtask results into a coherent final response
+>
+> This makes the agent significantly smarter for multi-part queries like *"Summarize my ML notes, create flashcards, and schedule a study session."*
+
+> [!WARNING]
+> **Qdrant vs pgvector**: Your doc mentions both. For Phase 1, I will use **pgvector inside Supabase** (zero extra services). Qdrant Cloud can be added later as a scaling option. This keeps the initial setup simpler.
+
+> [!NOTE]
+> **Scope**: This plan covers the full system as described in your design doc. I will build everything inside `c:\Users\manik\Desktop\NeuraNotes\` with two subdirectories: `backend/` and `mobile/`.
+
+---
+
+## Proposed Changes
+
+### Phase 1 — Project Scaffolding & Configuration (Day 1)
+
+**Goal**: Set up monorepo structure, all config files, environment templates, and Docker setup.
+
+#### [NEW] `backend/` — FastAPI project skeleton
+
+| File | Purpose |
+|------|---------|
+| `backend/app/__init__.py` | Package init |
+| `backend/app/main.py` | FastAPI app entry point with CORS, lifespan, router includes |
+| `backend/app/core/config.py` | `pydantic-settings` config loading all env vars |
+| `backend/app/core/security.py` | JWT creation/validation helpers |
+| `backend/requirements.txt` | All Python dependencies |
+| `backend/Dockerfile` | Multi-stage Python 3.12 Docker build |
+| `backend/docker-compose.yml` | Single service (API) — all deps are cloud |
+| `backend/.env.example` | Template with all required keys documented |
+| `backend/.gitignore` | Python + env + IDE ignores |
+
+#### [NEW] `mobile/` — Expo React Native skeleton
+
+| File | Purpose |
+|------|---------|
+| Created via `npx create-expo-app@latest ./` | Expo SDK 52+ with TypeScript |
+| `mobile/app/_layout.tsx` | Root layout with auth gate |
+| `mobile/constants/theme.ts` | Design tokens (colors, typography, spacing) |
+| `mobile/constants/api.ts` | API base URL config |
+
+#### [NEW] Root files
+
+| File | Purpose |
+|------|---------|
+| `README.md` | Project overview + getting started |
+| `.gitignore` | Root-level ignores |
+
+---
+
+### Phase 2 — Database Schema & Supabase Setup (Day 2–3)
+
+**Goal**: Create all PostgreSQL tables with pgvector extension in Supabase, implement database access layer.
+
+#### [NEW] `backend/app/db/supabase_client.py`
+- Initialize Supabase Python client from config
+- Provide `get_supabase()` dependency for FastAPI injection
+
+#### [NEW] `backend/app/models/user.py`
+- Pydantic model for User (mirrors `users` table)
+
+#### [NEW] `backend/app/models/note.py`
+- Pydantic models for Note, NoteChunk, Tag, NoteTag
+
+#### [NEW] `backend/app/models/conversation.py`
+- Pydantic models for Conversation, Message
+
+#### [NEW] `backend/supabase/migrations/001_initial_schema.sql`
+- Full SQL migration script:
+  - `CREATE EXTENSION IF NOT EXISTS vector;`
+  - `users`, `notes`, `tags`, `note_tags`, `note_chunks` (with `embedding VECTOR(3072)`), `conversations`, `messages` tables
+  - RLS policies for user data isolation
+  - `match_chunks()` RPC function for cosine similarity search
+  - Indexes (HNSW on embeddings, B-tree on `user_id`, `created_at`)
+
+#### [NEW] `backend/app/schemas/note.py`
+- Request/response Pydantic schemas: `NoteCreate`, `NoteUpdate`, `NoteResponse`, `NoteSearchRequest`
+
+#### [NEW] `backend/app/schemas/chat.py`
+- Schemas: `MessageCreate`, `ConversationCreate`, `ChatResponse`
+
+---
+
+### Phase 3 — Authentication System (Day 4–5)
+
+**Goal**: Google OAuth2 login via Supabase Auth, JWT token issuance, auth middleware.
+
+#### [NEW] `backend/app/routers/auth.py`
+- `POST /auth/google` — receive Google OAuth token, validate with Supabase, return JWT
+- `POST /auth/refresh` — refresh access token
+- `POST /auth/logout` — invalidate session
+
+#### [NEW] `backend/app/dependencies.py`
+- `get_current_user()` — FastAPI dependency that extracts + validates JWT from `Authorization` header
+- `require_auth` — wrapper for protected routes
+
+#### [NEW] `backend/app/core/security.py`
+- `create_access_token()`, `create_refresh_token()`, `verify_token()`
+- JWT with 15-min access tokens, 30-day refresh tokens using `python-jose`
+
+---
+
+### Phase 4 — Notes CRUD API (Day 6–8)
+
+**Goal**: Full notes lifecycle — create, read, update, delete, list with pagination.
+
+#### [NEW] `backend/app/routers/notes.py`
+| Endpoint | Description |
+|----------|-------------|
+| `POST /notes` | Create note (text) — triggers async embedding |
+| `GET /notes` | List notes with pagination, tag/type/date filters |
+| `GET /notes/{id}` | Get single note with chunks and metadata |
+| `PATCH /notes/{id}` | Update note (re-embeds if content changes) |
+| `DELETE /notes/{id}` | Soft delete + remove vectors |
+
+#### [NEW] `backend/app/services/capture_service.py`
+- `capture_text()` — validate, store in Supabase, trigger embedding
+- `process_capture()` — orchestrate chunking → embedding → vector storage
+
+#### [NEW] `backend/app/utils/chunker.py`
+- `chunk_text(text, chunk_size=512, overlap=50)` — token-aware text splitter
+- Uses `tiktoken` for accurate token counting
+
+---
+
+### Phase 5 — Embedding & Vector Search (Day 9–11)
+
+**Goal**: Generate embeddings via Google AI Studio, store in Supabase pgvector, implement semantic search.
+
+#### [NEW] `backend/app/services/embedding_service.py`
+- `generate_embedding(text) → list[float]` — calls `gemini-embedding-001` (3072-dim)
+- `batch_embed(texts) → list[list[float]]` — batch up to 20 chunks per API call
+- Retry logic with exponential backoff
+- Fallback: if Google fails, use Groq hosted embedding if available
+
+#### [NEW] `backend/app/services/retrieval_service.py`
+- `semantic_search(query, user_id, filters, limit=5)`:
+  1. Embed query → 3072-dim vector
+  2. Call Supabase `match_chunks()` RPC (cosine similarity, top-20)
+  3. Apply metadata filters (date range, tags, content type)
+  4. Return top-5 with source note titles and dates
+
+#### [MODIFY] `backend/app/routers/notes.py`
+- Add `POST /notes/search` — semantic search endpoint
+
+---
+
+### Phase 6 — AI Agent with Task Decomposition (Day 12–18) ⭐ CORE
+
+**Goal**: Build the intelligent agent core with the **Orchestrator → Planner → Executor → Synthesizer** pipeline.
+
+> [!IMPORTANT]
+> This is the most critical phase and implements your requested **subtask decomposition** enhancement. The agent doesn't just answer — it *plans* how to answer.
+
+#### [NEW] `backend/app/services/agent/orchestrator.py`
+The **entry point** for all user interactions with the AI. Responsibilities:
+```
+User Input
+    │
+    ▼
+┌──────────────────┐
+│   ORCHESTRATOR    │  ← Classifies intent + complexity
+│                  │
+│  Simple query?   │──Yes──▶ Direct response (single LLM call)
+│  (greeting,      │
+│   quick lookup)  │
+│                  │
+│  Complex query?  │──Yes──▶ Send to PLANNER
+│  (multi-part,    │
+│   requires tools)│
+└──────────────────┘
+```
+
+- `classify_intent(message)` — uses Llama 3.3 70B to classify:
+  - `simple_query` — direct answer, no decomposition
+  - `knowledge_retrieval` — needs RAG but single-step
+  - `complex_task` — needs decomposition (multi-step, multi-tool)
+  - `capture_request` — user wants to save something
+- Routes to appropriate handler based on classification
+
+#### [NEW] `backend/app/services/agent/planner.py`
+The **task decomposition engine**. When the orchestrator identifies a complex query:
+
+```
+Complex User Input: "Summarize my ML notes from last week, 
+create 10 flashcards, and schedule a study session for tomorrow"
+    │
+    ▼
+┌──────────────────┐
+│     PLANNER      │  ← Breaks into ordered subtasks
+│                  │
+│  Subtask 1:      │  search_notes(topic="ML", date="last week")
+│  Subtask 2:      │  summarize(context=subtask_1_result)
+│  Subtask 3:      │  generate_flashcards(context=subtask_1_result, count=10)
+│  Subtask 4:      │  create_calendar_event(title="ML Study", date="tomorrow")
+│  Subtask 5:      │  synthesize_response(all_results)
+└──────────────────┘
+```
+
+- `decompose(message, user_context) → list[Subtask]`
+- Each `Subtask` has: `id`, `description`, `tool_name`, `depends_on: list[id]`, `parameters`
+- Uses Llama 3.3 70B with structured output (JSON mode) for reliable decomposition
+- Validates dependency graph is a DAG (no circular dependencies)
+
+#### [NEW] `backend/app/services/agent/executor.py`
+The **step-by-step processor**:
+
+```
+Subtask Queue: [S1, S2, S3, S4, S5]
+    │
+    ▼
+┌──────────────────┐
+│    EXECUTOR      │  ← Processes each subtask in order
+│                  │
+│  S1: Execute     │──▶ Result stored in context
+│  S2: Execute     │──▶ Uses S1 result as input
+│  S3: Execute     │──▶ Uses S1 result as input
+│  S4: Execute     │──▶ Independent
+│  S5: Synthesize  │──▶ Merges all results
+└──────────────────┘
+```
+
+- `execute_plan(subtasks, conversation_context) → FinalResponse`
+- Maintains a `subtask_results: dict[id, result]` accumulator
+- Resolves dependencies: waits for prerequisite subtasks before executing
+- Calls appropriate tool for each subtask
+- Handles errors gracefully: if a subtask fails, reports partial results
+
+#### [NEW] `backend/app/services/agent/synthesizer.py`
+- `synthesize(subtask_results, original_query) → str`
+- Takes all subtask outputs and creates a coherent, well-formatted final response
+- Ensures proper citations from source notes
+- Formats for mobile reading (concise paragraphs, markdown)
+
+#### [NEW] `backend/app/services/agent/tools.py`
+Tool definitions for the agent (implements the 6 tools from design doc):
+
+| Tool | Function | Description |
+|------|----------|-------------|
+| `search_notes` | `search_notes(query, filters)` | Semantic search over user's knowledge base |
+| `create_note` | `create_note(title, content, tags)` | Save new note to knowledge base |
+| `summarize_notes` | `summarize_notes(note_ids)` | Generate summary from specific notes |
+| `generate_flashcards` | `generate_flashcards(content, count)` | Create spaced repetition cards |
+| `create_calendar_event` | `create_calendar_event(title, date, time)` | Schedule event (stub → future Google Calendar) |
+| `draft_email` | `draft_email(to, subject, body_context)` | Draft email (stub → future Gmail integration) |
+
+#### [NEW] `backend/app/services/agent/prompt_builder.py`
+Dynamic 4-layer system prompt constructor:
+- Layer 1: Identity (static)
+- Layer 2: User profile (from DB — note count, top tags, recent topics)
+- Layer 3: Retrieved context (from vector search, with XML tags)
+- Layer 4: Behavioral rules + subtask decomposition instructions
+
+#### [NEW] `backend/app/services/ai_client.py`
+Abstract AI client with provider switching:
+- `GroqClient` — primary (`llama-3.3-70b-versatile`) + secondary (`openai/gpt-oss-120b`)
+- `ClaudeClient` — future upgrade path
+- Switch via `AI_PROVIDER` env var
+- Includes `transcribe()` method for Whisper via Groq
+
+#### [NEW] `backend/app/routers/chat.py`
+| Endpoint | Description |
+|----------|-------------|
+| `POST /chat/conversations` | Start new conversation |
+| `GET /chat/conversations` | List conversations (sorted by `updated_at`) |
+| `POST /chat/conversations/{id}/messages` | Send message → orchestrator → response |
+| `GET /chat/conversations/{id}/messages` | Get message history (paginated) |
+| `WebSocket /ws/chat/{id}` | Stream response tokens in real-time |
+
+---
+
+### Phase 7 — URL Import & PDF Parsing (Day 19–22)
+
+**Goal**: Support URL scraping and PDF upload with text extraction + embedding.
+
+#### [NEW] `backend/app/utils/url_scraper.py`
+- `scrape_url(url) → ExtractedContent` — uses `trafilatura` for clean text extraction
+- Extracts: title, main content, publish date, author
+- Handles errors (404, paywalls) gracefully
+
+#### [NEW] `backend/app/utils/pdf_parser.py`
+- `parse_pdf(file_bytes) → ExtractedContent` — uses `pymupdf` (fitz)
+- Extracts text page by page
+- Handles multi-column layouts, tables
+
+#### [MODIFY] `backend/app/services/capture_service.py`
+- Add `capture_url(url)` — scrape → chunk → embed → store
+- Add `capture_pdf(file)` — parse → chunk → embed → store
+- File storage: upload PDF to Supabase Storage bucket
+
+#### [MODIFY] `backend/app/routers/notes.py`
+- Add `POST /notes/import/url` — URL import endpoint
+- Add `POST /notes/import/pdf` — multipart PDF upload endpoint
+
+---
+
+### Phase 8 — Voice Notes & Transcription (Day 23–25)
+
+**Goal**: Audio recording on mobile with Whisper transcription via Groq.
+
+#### [MODIFY] `backend/app/services/capture_service.py`
+- Add `capture_voice(audio_file)`:
+  1. Upload audio to Supabase Storage
+  2. Send to Groq Whisper (`whisper-large-v3`) for transcription
+  3. Store transcription as note content
+  4. Chunk + embed transcribed text
+
+#### [MODIFY] `backend/app/routers/notes.py`
+- Add `POST /notes/import/voice` — multipart audio upload
+
+---
+
+### Phase 9 — Mobile App Foundation (Day 26–33)
+
+**Goal**: Full React Native app with auth, home, capture, and navigation.
+
+#### [NEW] `mobile/app/(auth)/welcome.tsx`
+- Welcome/onboarding screen with NeuraNotes branding
+- "Sign in with Google" button
+
+#### [NEW] `mobile/app/(auth)/login.tsx`
+- Google OAuth flow using `expo-auth-session`
+- JWT token storage in MMKV
+
+#### [NEW] `mobile/app/(tabs)/_layout.tsx`
+- Bottom tab navigator: Home, Capture, Search, Chat, Profile
+
+#### [NEW] `mobile/app/(tabs)/index.tsx` (Home)
+- Recent notes list
+- Quick stats (total notes, top tags)
+- FAB for quick capture
+
+#### [NEW] `mobile/app/(tabs)/capture.tsx`
+- 4 capture modes: Text, URL, Voice, File
+- Text input with markdown support
+- URL input with preview
+- Voice recording with `expo-av`
+- File picker with `expo-document-picker`
+
+#### [NEW] `mobile/app/(tabs)/search.tsx`
+- Semantic search bar
+- Results list with note cards
+- Filters: date range, tags, content type
+
+#### [NEW] `mobile/app/(tabs)/chat.tsx`
+- Conversation list → Chat screen
+- WebSocket connection for streaming responses
+- Chat bubbles with markdown rendering
+- Source citations as tappable links
+
+#### [NEW] `mobile/app/(tabs)/profile.tsx`
+- Settings: API URL, logout, theme toggle
+- Stats: note count, storage used
+
+#### [NEW] `mobile/stores/authStore.ts`
+- Zustand store: `token`, `user`, `isAuthenticated`, `login()`, `logout()`
+
+#### [NEW] `mobile/stores/notesStore.ts`
+- Zustand store: `notes[]`, `fetchNotes()`, `createNote()`, `searchNotes()`
+
+#### [NEW] `mobile/stores/chatStore.ts`
+- Zustand store: `conversations[]`, `messages[]`, `sendMessage()`, `streamResponse()`
+
+#### [NEW] `mobile/services/api.ts`
+- Axios instance with JWT interceptor, base URL config, error handling
+
+#### [NEW] `mobile/services/notesService.ts`
+- API calls: `createNote()`, `getNotes()`, `searchNotes()`, `importUrl()`, `uploadPdf()`, `uploadVoice()`
+
+#### [NEW] `mobile/services/chatService.ts`
+- API calls + WebSocket: `createConversation()`, `sendMessage()`, `connectWebSocket()`
+
+#### [NEW] `mobile/components/NoteCard.tsx`
+- Note preview card: title, snippet, tags, date, content type icon
+
+#### [NEW] `mobile/components/CaptureModal.tsx`
+- Bottom sheet modal with 4 capture options
+
+#### [NEW] `mobile/components/ChatBubble.tsx`
+- User/assistant message bubble with markdown rendering
+
+#### [NEW] `mobile/components/SearchBar.tsx`
+- Animated search input with filter chips
+
+---
+
+### Phase 10 — Offline Support (Day 34–37)
+
+**Goal**: SQLite local storage + sync queue for offline-first experience.
+
+#### [NEW] `mobile/services/offlineDb.ts`
+- SQLite schema mirroring key tables (notes, conversations)
+- `saveNoteLocally()`, `getLocalNotes()`, `searchLocalNotes()` (FTS5)
+
+#### [NEW] `mobile/hooks/useOfflineSync.ts`
+- Sync queue in MMKV: `pendingUploads[]`
+- `NetInfo` listener → trigger sync when online
+- Conflict resolution: last-write-wins based on `updated_at`
+
+#### [MODIFY] `mobile/stores/notesStore.ts`
+- Integrate offline storage: write to SQLite first, then sync to API
+
+---
+
+### Phase 11 — Intelligence Layer & Observability (Day 38–42)
+
+**Goal**: Daily digests, flashcard generation, Langfuse observability.
+
+#### [NEW] `backend/app/services/digest_service.py`
+- `generate_daily_digest(user_id)` — summarizes notes captured in last 24h
+- `generate_weekly_digest(user_id)` — weekly knowledge report with trends
+- Triggered by Supabase `pg_cron` scheduled function
+
+#### [MODIFY] `backend/app/services/agent/tools.py`
+- Implement `generate_flashcards` tool fully:
+  - Takes note content, generates Q&A pairs using Llama 3.3
+  - Returns structured flashcard data
+
+#### [NEW] `backend/app/services/observability.py`
+- Langfuse integration: wrap every AI call with tracing
+- Track: model, latency, input/output tokens, cost estimate, success/failure
+
+#### [MODIFY] `backend/app/services/ai_client.py`
+- Add Langfuse decorators to all LLM calls
+
+---
+
+### Phase 12 — Rate Limiting, Security & Deployment (Day 43–48)
+
+**Goal**: Production hardening and deployment.
+
+#### [NEW] `backend/app/middleware/rate_limiter.py`
+- Redis-based rate limiting via Upstash:
+  - 100 req/min per user (general)
+  - 10 AI calls/min per user (agent endpoints)
+
+#### [NEW] `backend/app/middleware/input_validator.py`
+- Max content length: 50,000 chars
+- MIME type validation for file uploads
+- Prompt injection sanitization (XML tag separation)
+
+#### [MODIFY] `backend/app/main.py`
+- Add rate limiting middleware
+- Add input validation middleware
+- Tighten CORS to only allowed origins
+
+#### [NEW] `backend/.github/workflows/deploy.yml`
+- GitHub Actions CI/CD:
+  - Run tests on push
+  - Deploy to Render.com on `main` branch
+
+#### [NEW] `mobile/eas.json`
+- EAS Build config for Android APK + iOS TestFlight
+
+---
+
+## Agent Architecture Detail — Task Decomposition Flow
+
+```mermaid
+flowchart TD
+    A["User Input"] --> B["Orchestrator"]
+    B -->|Simple| C["Direct LLM Response"]
+    B -->|Retrieval| D["RAG Pipeline"]
+    B -->|Complex| E["Planner"]
+    
+    E --> F["Subtask 1: Search Notes"]
+    E --> G["Subtask 2: Summarize"]
+    E --> H["Subtask 3: Generate Flashcards"]
+    E --> I["Subtask 4: Create Calendar Event"]
+    
+    F --> J["Executor"]
+    G --> J
+    H --> J
+    I --> J
+    
+    J --> K["Synthesizer"]
+    K --> L["Final Response with Citations"]
+    
+    D --> L
+    C --> L
+```
+
+### Subtask Schema
+
+```python
+class Subtask(BaseModel):
+    id: str                          # "s1", "s2", etc.
+    description: str                 # Human-readable description
+    tool_name: str                   # Which tool to call
+    parameters: dict                 # Tool-specific params
+    depends_on: list[str] = []       # IDs of prerequisite subtasks
+    status: str = "pending"          # pending → running → completed → failed
+    result: Optional[Any] = None     # Output after execution
+```
+
+### Decomposition Prompt (used by Planner)
+
+```text
+You are a task planner for a personal knowledge assistant.
+Given a user's request, break it down into atomic subtasks.
+
+Rules:
+1. Each subtask must use exactly ONE tool
+2. Order subtasks by dependency (prerequisite first)
+3. Keep subtasks atomic — one clear action each
+4. If a subtask needs output from another, specify depends_on
+5. Always end with a synthesize step to merge results
+
+Available tools: search_notes, create_note, summarize_notes, 
+generate_flashcards, create_calendar_event, draft_email
+
+Output JSON array of subtasks.
+```
+
+---
+
+## Updated Tech Decisions (Changes from Design Doc)
+
+| Area | Design Doc | Implementation | Reason |
+|------|-----------|----------------|--------|
+| Embedding Model | `text-embedding-004` (768-dim) | `gemini-embedding-001` (3072-dim) | text-embedding-004 deprecated Jan 2026 |
+| Vector DB (Phase 1) | Qdrant Cloud | Supabase pgvector | Fewer services to manage initially |
+| Vector DB (Scale) | Qdrant Cloud | Qdrant Cloud (add later) | Easy migration when needed |
+| Agent Architecture | Single-pass responder | Orchestrator → Planner → Executor → Synthesizer | User's requested enhancement for subtask decomposition |
+| Task Queue | Celery + Redis | Supabase Edge Functions + `pg_cron` | Eliminates Celery/Redis server; uses existing Supabase free tier |
+| Expo SDK | ~51.0.0 | Latest (52+) | Use current stable |
+
+---
+
+## Open Questions
+
+> [!IMPORTANT]
+> **1. Google OAuth Setup**: Do you already have a Google Cloud project with OAuth credentials configured? If not, I'll include step-by-step setup instructions.
+
+> [!IMPORTANT]
+> **2. Supabase Project**: Should I create the SQL migration scripts for you to run manually in Supabase SQL Editor, or do you want me to use the Supabase CLI for local development first?
+
+> [!IMPORTANT]
+> **3. Mobile Priority**: Your doc mentions "Mobile-First". Should I build the mobile app screens before the backend is fully complete (using mock data), or build backend first and wire up mobile after? I recommend **backend first** (Phases 1–8) then mobile (Phase 9+).
+
+> [!NOTE]
+> **4. Calendar & Email Integration**: The design doc lists `create_calendar_event` and `draft_email` tools. For Phase 6, I'll implement these as **stubs** that return mock responses. Full Google Calendar/Gmail integration requires additional OAuth scopes and can be added in a future phase. Is that acceptable?
+
+---
+
+## Verification Plan
+
+### Automated Tests
+
+| Phase | Test | Command |
+|-------|------|---------|
+| Phase 2 | Schema validation | Run migration SQL in Supabase, verify tables exist |
+| Phase 3 | Auth endpoints | `pytest tests/test_auth.py` — test JWT flow |
+| Phase 4 | Notes CRUD | `pytest tests/test_notes.py` — create, read, update, delete |
+| Phase 5 | Embedding + Search | `pytest tests/test_search.py` — embed a note, search for it |
+| Phase 6 | Agent decomposition | `pytest tests/test_agent.py` — verify complex queries are decomposed |
+| Phase 9 | Mobile builds | `npx expo start --web` — verify screens render |
+
+### Manual Verification
+
+| Phase | Verification |
+|-------|-------------|
+| Phase 4 | cURL/Postman test all note endpoints |
+| Phase 6 | Send complex query via API, verify subtask decomposition in logs |
+| Phase 8 | Record voice note on phone, verify transcription appears as note |
+| Phase 9 | Run app on phone via Expo Go, verify all screens and navigation |
+| Phase 10 | Turn off wifi, create note, turn on wifi, verify sync |
+| Phase 12 | Deploy to Render.com, verify API responds on public URL |
+
+---
+
+## Estimated Timeline
+
+| Phase | Duration | Cumulative |
+|-------|----------|------------|
+| 1. Scaffolding | 1 day | Day 1 |
+| 2. Database | 2 days | Day 3 |
+| 3. Auth | 2 days | Day 5 |
+| 4. Notes CRUD | 3 days | Day 8 |
+| 5. Embeddings & Search | 3 days | Day 11 |
+| 6. AI Agent (Task Decomposition) | 7 days | Day 18 |
+| 7. URL + PDF Import | 4 days | Day 22 |
+| 8. Voice Notes | 3 days | Day 25 |
+| 9. Mobile App | 8 days | Day 33 |
+| 10. Offline Support | 4 days | Day 37 |
+| 11. Intelligence Layer | 5 days | Day 42 |
+| 12. Deploy & Harden | 6 days | Day 48 |
+| **TOTAL** | **~7 weeks** | |

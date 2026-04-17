@@ -1,0 +1,38 @@
+# ── Framework ────────────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+pydantic-settings==2.6.0
+python-multipart==0.0.12
+
+# ── Supabase (DB + Auth + Storage) ──────────────────────────
+supabase==2.10.0
+
+# ── Redis (Upstash - serverless HTTP) ───────────────────────
+upstash-redis==1.3.0
+
+# ── AI APIs (all free) ─────────────────────────────────────
+groq==0.12.0
+google-genai==1.0.0
+
+# ── Vector Search (Qdrant - future scaling) ─────────────────
+# qdrant-client==1.12.0  # Uncomment when scaling beyond pgvector
+
+# ── Content Parsing ─────────────────────────────────────────
+trafilatura==1.12.0
+pymupdf==1.25.0
+pillow==11.0.0
+
+# ── Auth ────────────────────────────────────────────────────
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# ── AI Observability ───────────────────────────────────────
+langfuse==2.50.0
+
+# ── HTTP & Async ───────────────────────────────────────────
+httpx==0.28.0
+websockets==13.0
+
+# ── Utilities ──────────────────────────────────────────────
+tiktoken==0.8.0
+python-dotenv==1.0.1
