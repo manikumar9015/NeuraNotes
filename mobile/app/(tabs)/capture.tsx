@@ -15,6 +15,7 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { useNotesStore } from '@/stores/notesStore';
 import * as DocumentPicker from 'expo-document-picker';
+import { useVoiceRecorder } from '@/hooks/useVoiceRecorder';
 
 type CaptureMode = 'text' | 'url' | 'pdf' | 'voice';
 
@@ -29,7 +30,8 @@ export default function CaptureScreen() {
   const [selectedPdf, setSelectedPdf] = useState<{ uri: string; name: string } | null>(null);
   const contentRef = useRef<TextInput>(null);
 
-  const { createNote, importUrl, importPdf } = useNotesStore();
+  const { createNote, importUrl, importPdf, importVoice } = useNotesStore();
+  const { isRecording, duration, recordingUri, startRecording, stopRecording, resetRecorder } = useVoiceRecorder();
 
   const modes = [
     { key: 'text' as const, icon: 'file-text-o' as const, label: 'Text', color: Colors.typeText },
@@ -81,6 +83,26 @@ export default function CaptureScreen() {
         resetForm();
       } catch (e: any) {
         Alert.alert('Error', e.message || 'Failed to import PDF');
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    if (mode === 'voice') {
+      if (!recordingUri) {
+        Alert.alert('Error', 'Please record a voice note first');
+        return;
+      }
+      setSaving(true);
+      try {
+        const filename = `recording_${new Date().getTime()}.m4a`;
+        await importVoice(recordingUri, filename, tags);
+        Alert.alert('Success', 'Voice note uploaded and transcribing! 🎙️');
+        resetForm();
+        resetRecorder();
+      } catch (e: any) {
+        Alert.alert('Error', e.message || 'Failed to upload voice recording');
       } finally {
         setSaving(false);
       }
@@ -201,12 +223,40 @@ export default function CaptureScreen() {
         {/* Voice Mode */}
         {mode === 'voice' && (
           <View style={styles.voiceSection}>
-            <TouchableOpacity style={styles.voiceButton} activeOpacity={0.7}>
-              <View style={styles.voiceCircle}>
-                <FontAwesome name="microphone" size={32} color={Colors.text} />
+            <TouchableOpacity 
+              style={styles.voiceButton} 
+              activeOpacity={0.7}
+              onPress={isRecording ? stopRecording : startRecording}
+            >
+              <View style={[
+                styles.voiceCircle, 
+                isRecording && { backgroundColor: Colors.error + '30', borderColor: Colors.error }
+              ]}>
+                <FontAwesome 
+                  name={isRecording ? 'stop' : 'microphone'} 
+                  size={32} 
+                  color={isRecording ? Colors.error : Colors.text} 
+                />
               </View>
             </TouchableOpacity>
-            <Text style={styles.voiceHint}>Tap to start recording</Text>
+            
+            <Text style={styles.voiceHint}>
+              {isRecording ? 'Tap to stop recording' : recordingUri ? 'Recording ready' : 'Tap to start recording'}
+            </Text>
+            
+            {isRecording && (
+              <Text style={styles.durationText}>
+                {Math.floor(duration / 60)}:{(duration % 60).toString().padStart(2, '0')}
+              </Text>
+            )}
+
+            {!isRecording && recordingUri && (
+              <TouchableOpacity style={styles.retakeButton} onPress={resetRecorder}>
+                <FontAwesome name="refresh" size={14} color={Colors.textMuted} />
+                <Text style={styles.retakeText}>Retake Recording</Text>
+              </TouchableOpacity>
+            )}
+
             <Text style={styles.voiceSubhint}>
               Voice notes will be transcribed automatically
             </Text>
@@ -455,6 +505,30 @@ const styles = StyleSheet.create({
   voiceSubhint: {
     fontSize: FontSize.sm,
     color: Colors.textMuted,
+  },
+  durationText: {
+    fontSize: FontSize.xxl,
+    fontWeight: FontWeight.bold,
+    color: Colors.error,
+    marginBottom: Spacing.md,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  retakeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: Spacing.md,
+  },
+  retakeText: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
+    fontWeight: FontWeight.medium,
   },
   saveButton: {
     backgroundColor: Colors.primary,

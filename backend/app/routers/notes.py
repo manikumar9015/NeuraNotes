@@ -269,13 +269,16 @@ async def import_url(
     """Scrape a URL and import it as a note."""
     from app.services.capture_service import capture_url
 
-    result = await capture_url(
-        user_id=user["id"],
-        url=request.url,
-        tags=request.tags,
-        description=request.description,
-    )
-    return result
+    try:
+        result = await capture_url(
+            user_id=user["id"],
+            url=request.url,
+            tags=request.tags,
+            description=request.description,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # ── PDF Import ──────────────────────────────────────────────
@@ -335,3 +338,70 @@ async def import_voice(
         tags=tag_list,
     )
     return result
+
+
+# ── AI Flashcards Generation ────────────────────────────────
+
+@router.post("/{note_id}/flashcards", response_model=dict, status_code=status.HTTP_200_OK)
+async def generate_flashcards(
+    note_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """Generate flashcards from a note's content using AI."""
+    import json
+    from app.db.supabase_client import get_supabase_admin
+    from app.services.ai_client import get_ai_client
+
+    supabase = get_supabase_admin()
+
+    # Verify ownership and get content
+    note_result = (
+        supabase.table("notes")
+        .select("content, title")
+        .eq("id", note_id)
+        .eq("user_id", user["id"])
+        .execute()
+    )
+
+    if not note_result.data:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    note = note_result.data[0]
+    content = note["content"]
+    title = note["title"]
+
+    ai_client = get_ai_client()
+    
+    system_prompt = """You are a study assistant that generates flashcards.
+You will be provided with a note's content.
+Extract the most important facts, concepts, and definitions.
+Create flashcards from this info. Each flashcard should have a 'front' (the question or concept) and a 'back' (the answer or definition).
+You MUST output ONLY valid JSON in the following format, with no markdown formatting around it:
+{"flashcards": [{"front": "concept", "back": "definition"}]}
+Create between 5 and 15 flashcards depending on the length and density of the note."""
+
+    user_prompt = f"Note Title: {title}\n\nNote Content:\n{content}"
+
+    try:
+        response = await ai_client.chat(
+            system_prompt=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+            temperature=0.3,
+            response_format={"type": "json_object"},
+            max_tokens=2048,
+        )
+        
+        # Parse the JSON response
+        raw_json = response.get("content", "{}")
+        # Ensure it's valid JSON even if the model accidentally included markdown
+        if raw_json.startswith("```json"):
+            raw_json = raw_json[7:-3].strip()
+        
+        flashcards_data = json.loads(raw_json)
+        
+        return flashcards_data
+        
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="AI failed to generate valid JSON format")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")

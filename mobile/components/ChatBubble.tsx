@@ -109,7 +109,7 @@ const markdownStyles = StyleSheet.create({
   },
   code_inline: {
     backgroundColor: Colors.background,
-    color: Colors.secondary,
+    color: Colors.accent,
     borderRadius: BorderRadius.sm,
     paddingHorizontal: 4,
     fontFamily: 'SpaceMono',

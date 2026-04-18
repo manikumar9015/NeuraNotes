@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     # ── Google OAuth ───────────────────────────────────────
     google_client_id: str = ""
     google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:8000/integrations/google/callback"
+    google_token_uri: str = "https://oauth2.googleapis.com/token"
 
     # ── JWT ─────────────────────────────────────────────────
     access_token_expire_minutes: int = 15

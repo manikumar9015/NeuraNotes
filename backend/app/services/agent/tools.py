@@ -160,21 +160,35 @@ async def create_calendar_event(
     description: Optional[str] = None,
 ) -> dict:
     """
-    Create a calendar event. (Stub — full Google Calendar integration in future phase.)
-    Currently returns a confirmation that can be manually added.
+    Create a calendar event.
+    Parses details and creates a real event in the user's primary Google Calendar.
     """
-    return {
-        "tool": "create_calendar_event",
-        "success": True,
-        "event": {
-            "title": title,
-            "date": date,
-            "time": time,
-            "description": description,
-        },
-        "message": f"📅 Event '{title}' scheduled for {date}" + (f" at {time}" if time else ""),
-        "note": "Calendar integration pending — please add this event manually for now.",
-    }
+    from app.services.calendar_service import create_google_calendar_event
+    
+    result = await create_google_calendar_event(
+        user_id=user_id,
+        title=title,
+        date_str=date,
+        time_str=time,
+        description=description
+    )
+    
+    if result["success"]:
+        return {
+            "tool": "create_calendar_event",
+            "success": True,
+            "event_id": result["event_id"],
+            "html_link": result["html_link"],
+            "message": f"📅 {result['message']}",
+            "note": f"You can view the event here: {result['html_link']}",
+        }
+    else:
+        return {
+            "tool": "create_calendar_event",
+            "success": False,
+            "error": result["error"],
+            "message": f"❌ I couldn't create the calendar event: {result['error']}",
+        }
 
 
 async def draft_email(
@@ -184,9 +198,10 @@ async def draft_email(
     body_context: str,
 ) -> dict:
     """
-    Draft an email based on context. (Stub — full Gmail integration in future phase.)
-    Uses AI to generate a professional email draft.
+    Draft an email based on context.
+    Uses AI to generate a professional email draft and creates it in the user's Gmail.
     """
+    from app.services.gmail_service import create_gmail_draft
     ai_client = get_ai_client()
 
     prompt = f"""Draft a professional email with the following details:
@@ -202,17 +217,40 @@ Write a clear, professional email body. Do not include the To/Subject headers in
         max_tokens=600,
     )
 
-    return {
-        "tool": "draft_email",
-        "success": True,
-        "draft": {
-            "to": to,
-            "subject": subject,
-            "body": response["content"],
-        },
-        "message": f"📧 Email draft to {to} ready for review",
-        "note": "Gmail integration pending — please copy and send manually for now.",
-    }
+    draft_content = response["content"]
+
+    # Try to create a real Gmail draft
+    gmail_result = await create_gmail_draft(
+        user_id=user_id,
+        to=to,
+        subject=subject,
+        body=draft_content
+    )
+
+    if gmail_result["success"]:
+        return {
+            "tool": "draft_email",
+            "success": True,
+            "draft": {
+                "to": to,
+                "subject": subject,
+                "body": draft_content,
+                "draft_id": gmail_result["draft_id"]
+            },
+            "message": f"📧 Email draft to {to} has been created in your Gmail account (Draft ID: {gmail_result['draft_id']}).",
+        }
+    else:
+        return {
+            "tool": "draft_email",
+            "success": True, # Still success because we generated the draft text
+            "draft": {
+                "to": to,
+                "subject": subject,
+                "body": draft_content,
+            },
+            "message": f"📧 I've drafted an email to {to}, but couldn't create it in your Gmail: {gmail_result['error']}.",
+            "note": "You can manually copy and send the draft below.",
+        }
 
 
 # ── Tool Registry ──────────────────────────────────────────

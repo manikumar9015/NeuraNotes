@@ -19,6 +19,7 @@ google-genai==1.0.0
 
 # ── Content Parsing ─────────────────────────────────────────
 trafilatura==1.12.0
+beautifulsoup4>=4.12.0
 pymupdf==1.25.0
 pillow==11.0.0
 
@@ -33,6 +34,12 @@ langfuse==2.50.0
 httpx>=0.26.0,<0.28.0
 websockets==13.0
 
+# ── Google APIs (OAuth + Services) ──────────────────────────
+google-auth>=2.0.0
+google-auth-oauthlib>=1.0.0
+google-api-python-client>=2.0.0
+
 # ── Utilities ──────────────────────────────────────────────
 tiktoken==0.8.0
 python-dotenv==1.0.1
+python-dateutil>=2.8.2

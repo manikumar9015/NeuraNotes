@@ -116,6 +116,12 @@ function AuthGateway() {
           headerTitle: 'All Notes',
         }} 
       />
+      <Stack.Screen 
+        name="note/[id]" 
+        options={{ 
+          headerTitle: 'Note Detail',
+        }} 
+      />
     </Stack>
   );
 }

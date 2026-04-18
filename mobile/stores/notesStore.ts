@@ -26,6 +26,11 @@ interface Note {
   metadata: Record<string, any>;
 }
 
+export interface Flashcard {
+  front: string;
+  back: string;
+}
+
 interface SearchResult {
   note_id: string;
   title: string;
@@ -39,6 +44,7 @@ interface SearchResult {
 
 interface NotesState {
   notes: Note[];
+  selectedNote: Note | null;
   searchResults: SearchResult[];
   isLoading: boolean;
   isSearching: boolean;
@@ -48,6 +54,8 @@ interface NotesState {
 
   // Actions
   fetchNotes: (page?: number) => Promise<void>;
+  fetchNoteDetail: (id: string) => Promise<Note>;
+  clearSelectedNote: () => void;
   createNote: (data: { content: string; title?: string; content_type?: string; tags?: string[] }) => Promise<Note>;
   updateNote: (id: string, data: Partial<Note>) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
@@ -55,11 +63,14 @@ interface NotesState {
   importUrl: (url: string, tags?: string[], description?: string) => Promise<Note>;
   importPdf: (fileUri: string, filename: string, tags?: string[]) => Promise<Note>;
   importVoice: (fileUri: string, filename: string, tags?: string[]) => Promise<Note>;
+  generateFlashcards: (noteId: string) => Promise<Flashcard[]>;
+  fetchDailyDigest: () => Promise<string>;
   clearSearch: () => void;
 }
 
 export const useNotesStore = create<NotesState>((set, get) => ({
   notes: [],
+  selectedNote: null,
   searchResults: [],
   isLoading: false,
   isSearching: false,
@@ -73,16 +84,25 @@ export const useNotesStore = create<NotesState>((set, get) => ({
       const response = await api.get(API_ENDPOINTS.NOTES, {
         params: { page, limit: 20 },
       });
-      set({
-        notes: page === 1 ? response.data.notes : [...get().notes, ...response.data.notes],
-        total: response.data.total,
-        page,
-        isLoading: false,
-      });
+      set({ notes: response.data.notes, total: response.data.total, page, isLoading: false });
     } catch (error: any) {
       set({ error: error.message, isLoading: false });
     }
   },
+
+  fetchNoteDetail: async (id: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await api.get(`${API_ENDPOINTS.NOTES}/${id}`);
+      set({ selectedNote: response.data, isLoading: false });
+      return response.data;
+    } catch (error: any) {
+      set({ error: error.message, isLoading: false });
+      throw error;
+    }
+  },
+
+  clearSelectedNote: () => set({ selectedNote: null }),
 
   createNote: async (data) => {
     set({ isLoading: true, error: null });
@@ -161,6 +181,58 @@ export const useNotesStore = create<NotesState>((set, get) => ({
       const newNote = response.data;
       set({ notes: [newNote, ...get().notes], isLoading: false });
       return newNote;
+    } catch (error: any) {
+      set({ error: error.message, isLoading: false });
+      throw error;
+    }
+  },
+
+  importVoice: async (fileUri: string, filename: string, tags: string[] = []) => {
+    set({ isLoading: true, error: null });
+    try {
+      const formData = new FormData();
+      formData.append('file', {
+        uri: fileUri,
+        name: filename,
+        type: 'audio/m4a', // Default for expo-av on iOS
+      } as any);
+      
+      if (tags.length > 0) {
+        formData.append('tags', tags.join(','));
+      }
+
+      const response = await api.post(API_ENDPOINTS.NOTES_IMPORT_VOICE, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      
+      const newNote = response.data;
+      set({ notes: [newNote, ...get().notes], isLoading: false });
+      return newNote;
+    } catch (error: any) {
+      set({ error: error.message, isLoading: false });
+      throw error;
+    }
+  },
+
+  generateFlashcards: async (noteId: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await api.post(`${API_ENDPOINTS.NOTES}/${noteId}/flashcards`);
+      set({ isLoading: false });
+      return response.data.flashcards || [];
+    } catch (error: any) {
+      set({ error: error.message, isLoading: false });
+      throw error;
+    }
+  },
+
+  fetchDailyDigest: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      // Direct path since it's a new router
+      const response = await api.get('/digests/daily');
+      set({ isLoading: false });
+      return response.data.digest;
     } catch (error: any) {
       set({ error: error.message, isLoading: false });
       throw error;

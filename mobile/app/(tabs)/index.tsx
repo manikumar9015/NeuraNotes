@@ -62,6 +62,22 @@ export default function HomeScreen() {
         </Text>
       </View>
 
+      {/* Daily Digest Teaser */}
+      <TouchableOpacity 
+        style={styles.digestCard} 
+        activeOpacity={0.8}
+        onPress={() => router.push('/digest')}
+      >
+        <View style={styles.digestIconBadge}>
+           <FontAwesome name="sparkles" size={18} color={Colors.accentLight} />
+        </View>
+        <View style={styles.digestTextWrap}>
+          <Text style={styles.digestTitle}>Daily Digest</Text>
+          <Text style={styles.digestSub}>Review your intelligent 24h recap</Text>
+        </View>
+        <FontAwesome name="chevron-right" size={14} color={Colors.textMuted} />
+      </TouchableOpacity>
+
       {/* Quick Capture Buttons */}
       <Text style={styles.sectionTitle}>Quick Capture</Text>
       <View style={styles.quickCaptureRow}>
@@ -144,6 +160,39 @@ const styles = StyleSheet.create({
   highlight: {
     color: Colors.primary,
     fontWeight: FontWeight.bold,
+  },
+  digestCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    marginBottom: Spacing.xl,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    ...Shadow.sm,
+  },
+  digestIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.accent + '20',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
+  digestTextWrap: {
+    flex: 1,
+  },
+  digestTitle: {
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
+    color: Colors.text,
+    marginBottom: 2,
+  },
+  digestSub: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
   },
   sectionHeader: {
     flexDirection: 'row',

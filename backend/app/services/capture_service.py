@@ -87,30 +87,115 @@ async def capture_url(
     tags: Optional[list[str]] = None,
     description: Optional[str] = None,
 ) -> dict:
-    """Capture a note from a URL — scrape, extract text, chunk, embed."""
+    """Capture a note from a URL — scrape, enhance with AI, chunk, embed."""
     from app.utils.url_scraper import scrape_url
 
-    extracted = await scrape_url(url)
-    
-    # Prepend the user's description if provided
-    final_content = extracted["content"]
-    if description:
-        final_content = f"{description}\n\n{final_content}"
+    try:
+        extracted = await scrape_url(url)
+        raw_content = extracted["content"]
+        title = extracted.get("title")
 
-    return await capture_text(
-        user_id=user_id,
-        content=final_content,
-        title=extracted.get("title"),
-        content_type=ContentType.URL,
-        source_url=url,
-        tags=tags,
-        metadata={
+        # Enhance the scraped content with AI to produce clean, well-structured notes
+        enhanced_content = await _enhance_with_ai(
+            raw_content=raw_content,
+            url=url,
+            title=title,
+            user_description=description,
+        )
+
+        # Use the AI-enhanced content (fall back to raw if AI fails)
+        final_content = enhanced_content or raw_content
+
+        # Prepend the user's description if provided and AI didn't already incorporate it
+        if description and not enhanced_content:
+            final_content = f"{description}\n\n{final_content}"
+
+        metadata = {
             "author": extracted.get("author"),
             "publish_date": extracted.get("publish_date"),
             "word_count_original": extracted.get("word_count"),
             "user_description": description,
-        },
+            "ai_enhanced": enhanced_content is not None,
+            "scrape_failed": False,
+        }
+    except Exception as e:
+        print(f"⚠️ URL scrape failed, falling back to basic bookmark: {e}")
+        # Graceful fallback if scraping is impossible (e.g. strict login wall)
+        final_content = description or f"Unable to extract content from this URL. Saved as a bookmark instead."
+        title = "Saved Bookmark"
+        metadata = {
+            "user_description": description,
+            "scrape_failed": True,
+            "scrape_error": str(e),
+        }
+
+    return await capture_text(
+        user_id=user_id,
+        content=final_content,
+        title=title,
+        content_type=ContentType.URL,
+        source_url=url,
+        tags=tags,
+        metadata=metadata,
     )
+
+
+async def _enhance_with_ai(
+    raw_content: str,
+    url: str,
+    title: Optional[str] = None,
+    user_description: Optional[str] = None,
+) -> Optional[str]:
+    """
+    Send raw scraped content to AI to produce a clean, well-structured note.
+    Returns None if AI enhancement fails (caller falls back to raw content).
+    """
+    try:
+        from app.services.ai_client import get_ai_client
+
+        ai_client = get_ai_client()
+
+        # Truncate very long content to avoid token limits
+        truncated = raw_content[:8000]
+
+        system_prompt = """You are a note-taking assistant. You receive raw scraped text from a web page.
+Your job is to transform it into a clean, well-structured note in Markdown format.
+
+Rules:
+- Remove navigation text, footer links, cookie notices, ads, and other UI artifacts
+- Keep ALL the meaningful content — facts, ideas, code, explanations
+- Organize with proper headings (##), bullet points, and paragraphs
+- If it's an article, preserve the author's structure and key points
+- If it's a profile/repo page, extract the important info (name, description, tech stack, etc.)
+- If there is code, preserve it in proper markdown code blocks
+- Do NOT add your own opinions or commentary
+- Do NOT add a title heading — we already store the title separately
+- The output should read like a clean, well-organized study note"""
+
+        user_prompt = f"URL: {url}\n"
+        if title:
+            user_prompt += f"Page title: {title}\n"
+        if user_description:
+            user_prompt += f"User's note about this: {user_description}\n"
+        user_prompt += f"\n---\nRaw scraped content:\n{truncated}"
+
+        response = await ai_client.chat(
+            system_prompt=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+            temperature=0.3,
+            max_tokens=2048,
+        )
+
+        enhanced = response.get("content", "").strip()
+
+        # Only use if AI actually produced something meaningful
+        if enhanced and len(enhanced) > 30:
+            return enhanced
+
+    except Exception as e:
+        print(f"⚠️ AI content enhancement failed: {e}")
+
+    return None
 
 
 async def capture_pdf(

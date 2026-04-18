@@ -22,37 +22,38 @@ async def orchestrate(
 ) -> dict:
     """
     Main entry point for processing user messages.
-    
-    Flow:
-    1. Classify intent and complexity
-    2. Route to appropriate handler
-    3. Return response with metadata
-    
-    Returns:
-        {
-            "content": str,           # The AI response
-            "sources": list[dict],    # Referenced notes
-            "execution_plan": dict,   # Subtask trace (if complex)
-        }
     """
-    # Step 1: Classify the intent
-    complexity = await _classify_intent(message, conversation_history)
+    from app.core.observability import create_trace
+    trace = create_trace("orchestrate", user_id)
+    
+    if trace:
+        trace.update(input=message)
 
-    if complexity == "simple":
-        # Direct response — no RAG, no decomposition
-        return await _handle_simple(user_id, message, conversation_history)
+    try:
+        # Step 1: Classify the intent
+        complexity = await _classify_intent(message, conversation_history)
+        
+        if trace:
+            trace.update(metadata={"complexity": complexity})
 
-    elif complexity == "retrieval":
-        # Single-step RAG — retrieve context, generate response
-        return await _handle_retrieval(user_id, message, conversation_history)
-
-    elif complexity == "complex":
-        # Multi-step — decompose into subtasks, execute each, synthesize
-        return await _handle_complex(user_id, message, conversation_history)
-
-    else:
-        # Fallback to retrieval
-        return await _handle_retrieval(user_id, message, conversation_history)
+        if complexity == "simple":
+            result = await _handle_simple(user_id, message, conversation_history)
+        elif complexity == "retrieval":
+            result = await _handle_retrieval(user_id, message, conversation_history)
+        elif complexity == "complex":
+            result = await _handle_complex(user_id, message, conversation_history)
+        else:
+            result = await _handle_retrieval(user_id, message, conversation_history)
+            
+        if trace:
+            trace.update(output=result.get("content"))
+            
+        return result
+        
+    except Exception as e:
+        if trace:
+            trace.update(level="ERROR", status_message=str(e))
+        raise e
 
 
 async def _classify_intent(

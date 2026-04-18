@@ -42,6 +42,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── API Rate Limiter ──────────────────────────────────────────
+from app.core.rate_limiter import RateLimiterMiddleware
+app.add_middleware(RateLimiterMiddleware, max_requests=60, window_seconds=60)
 
 # ── Health Check ────────────────────────────────────────────
 @app.get("/health", tags=["System"])
@@ -56,8 +59,10 @@ async def health_check():
 
 
 # ── Include Routers ────────────────────────────────────────
-from app.routers import auth, notes, chat
+from app.routers import auth, notes, chat, integrations, digests
 
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(notes.router, prefix="/notes", tags=["Notes"])
 app.include_router(chat.router, prefix="/chat", tags=["Chat"])
+app.include_router(integrations.router, prefix="/integrations", tags=["Integrations"])
+app.include_router(digests.router, prefix="/digests", tags=["Digests"])

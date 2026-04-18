@@ -21,7 +21,6 @@ export default function AllNotesScreen() {
       <Stack.Screen 
         options={{ 
           headerTitle: 'All Notes',
-          headerBackTitleVisible: false,
         }} 
       />
 

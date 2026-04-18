@@ -44,9 +44,9 @@ export const Colors = {
   divider: '#1F1F3A',
 
   // Gradients (as arrays)
-  gradientPrimary: ['#6366F1', '#8B5CF6'],
-  gradientDark: ['#0F0F1A', '#1A1A2E'],
-  gradientCard: ['#1E1E35', '#252540'],
+  gradientPrimary: ['#6366F1', '#8B5CF6'] as const,
+  gradientDark: ['#0F0F1A', '#1A1A2E'] as const,
+  gradientCard: ['#1E1E35', '#252540'] as const,
 };
 
 export const Spacing = {

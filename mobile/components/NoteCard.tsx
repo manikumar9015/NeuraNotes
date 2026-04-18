@@ -4,6 +4,7 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Colors, Spacing, BorderRadius, FontSize, FontWeight, Shadow } from '@/constants/theme';
 import { useNotesStore } from '@/stores/notesStore';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import { useRouter } from 'expo-router';
 
 interface Note {
   id: string;
@@ -25,6 +26,7 @@ const TYPE_CONFIG: Record<string, { icon: any; color: string }> = {
 };
 
 export default function NoteCard({ note }: { note: Note }) {
+  const router = useRouter();
   const [dialogVisible, setDialogVisible] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const { deleteNote } = useNotesStore();
@@ -46,7 +48,11 @@ export default function NoteCard({ note }: { note: Note }) {
 
   return (
     <>
-      <TouchableOpacity style={styles.card} activeOpacity={0.7}>
+      <TouchableOpacity 
+        style={styles.card} 
+        activeOpacity={0.7}
+        onPress={() => router.push({ pathname: '/note/[id]', params: { id: note.id } } as any)}
+      >
         {/* Header */}
         <View style={styles.header}>
           <View style={[styles.typeBadge, { backgroundColor: config.color + '20' }]}>
