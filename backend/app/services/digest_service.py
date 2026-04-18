@@ -5,12 +5,12 @@ from pathlib import Path
 from app.db.supabase_client import get_supabase_admin
 from app.services.ai_client import get_ai_client
 
+from app.services.agent.prompts import load_prompt
+
 def get_digest_prompt() -> str:
-    prompt_path = Path(__file__).parent.parent / "prompts" / "digest.prompt.txt"
     try:
-        with open(prompt_path, "r", encoding="utf-8") as f:
-            return f.read()
-    except FileNotFoundError:
+        return load_prompt("digest")
+    except Exception:
         return "You are an AI assistant. Summarize these notes."
 
 async def generate_daily_digest(user_id: str) -> str:
