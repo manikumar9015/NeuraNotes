@@ -156,7 +156,7 @@ export default function DailyDigestScreen() {
         {/* The beautiful rounded background map */}
         <Animated.View style={styles.headerBackground}>
           <LinearGradient
-            colors={Colors.gradientPrimary}
+            colors={Colors.gradientCyan}
             style={StyleSheet.absoluteFillObject}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}

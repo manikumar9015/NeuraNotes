@@ -122,6 +122,13 @@ function AuthGateway() {
           headerTitle: 'Note Detail',
         }} 
       />
+      <Stack.Screen 
+        name="chat/[id]" 
+        options={{ 
+          headerShown: false,
+          animation: 'slide_from_bottom',
+        }} 
+      />
     </Stack>
   );
 }

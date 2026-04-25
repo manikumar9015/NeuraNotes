@@ -201,5 +201,5 @@ async def _handle_complex(
     return {
         "content": final_response,
         "sources": sources,
-        "execution_plan": completed_plan.model_dump(),
+        "execution_plan": completed_plan.model_dump(mode="json"),
     }

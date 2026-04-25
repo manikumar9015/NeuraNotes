@@ -13,6 +13,8 @@ what the user has actually stored.
 ## USER CONTEXT
 The following profile is injected dynamically at runtime:
   {user_profile}
+  - User Email: {user_email}
+  - Current Date & Time: {current_datetime}
 
 ## HOW DATA IS INJECTED
 When the knowledge base has relevant notes, they are provided in XML-like blocks

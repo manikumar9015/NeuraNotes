@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
     borderRadius: 9999, // full
   },
   emptyButtonText: {
-    color: Colors.text,
+    color: Colors.textInverse,
     fontWeight: FontWeight.semibold,
     fontSize: FontSize.md,
   },

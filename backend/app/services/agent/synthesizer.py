@@ -55,8 +55,10 @@ async def synthesize_results(
         + failure_notices
     )
 
+    full_system_prompt = load_prompt("synthesizer") + "\n\n" + load_prompt("system_rules")
+
     response = await ai_client.chat(
-        system_prompt=load_prompt("synthesizer"),
+        system_prompt=full_system_prompt,
         messages=[{"role": "user", "content": synthesis_prompt}],
         max_tokens=2000,
     )

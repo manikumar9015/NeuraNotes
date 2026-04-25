@@ -4,6 +4,7 @@ by loading modular .prompt.txt templates and injecting dynamic context.
 """
 
 from typing import Optional
+from datetime import datetime
 
 from app.db.supabase_client import get_supabase_admin
 from app.services.agent.prompts import load_prompt
@@ -25,8 +26,9 @@ async def build_system_prompt(
     supabase = get_supabase_admin()
 
     # ── Layer 2: User Profile (dynamic) ────────────────────────────────────
-    user_result = supabase.table("users").select("name").eq("id", user_id).single().execute()
+    user_result = supabase.table("users").select("name, email").eq("id", user_id).single().execute()
     user_name = user_result.data.get("name", "User") if user_result.data else "User"
+    user_email = user_result.data.get("email", "Unknown") if user_result.data else "Unknown"
 
     note_count_result = (
         supabase.table("notes")
@@ -78,6 +80,8 @@ async def build_system_prompt(
 
     identity = identity_template.format(
         user_name=user_name,
+        user_email=user_email,
+        current_datetime=datetime.now().strftime("%Y-%m-%d %H:%M:%S (%A)"),
         user_profile=user_profile,
         retrieved_context=(
             f"\n## Relevant Notes from Knowledge Base\n{context_section}"

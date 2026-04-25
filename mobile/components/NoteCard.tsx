@@ -195,7 +195,7 @@ const styles = StyleSheet.create({
   },
   tag: {
     fontSize: FontSize.xs,
-    color: Colors.primaryLight,
+    color: Colors.primary,
     fontWeight: FontWeight.medium,
   },
   tagMore: {

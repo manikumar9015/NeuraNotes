@@ -1,18 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TouchableOpacity, 
-  ActivityIndicator, 
-  Animated, 
-  Dimensions 
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ActivityIndicator,
+  Animated,
+  Dimensions,
+  SafeAreaView,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useNotesStore, Flashcard } from '../../stores/notesStore';
-import { Colors, Spacing, BorderRadius, FontSize, Shadow } from '../../constants/theme';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '../../constants/theme';
 
 const { width } = Dimensions.get('window');
 
@@ -20,18 +20,19 @@ export default function FlashcardsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { generateFlashcards, selectedNote, fetchNoteDetail } = useNotesStore();
-  
+
   const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
+  const [known, setKnown] = useState(0);
+  const [review, setReview] = useState(0);
+  const [sessionDone, setSessionDone] = useState(false);
 
   const flipAnim = useRef(new Animated.Value(0)).current;
 
-  useEffect(() => {
-    loadFlashcards();
-  }, [id]);
+  useEffect(() => { loadFlashcards(); }, [id]);
 
   const loadFlashcards = async () => {
     setLoading(true);
@@ -43,385 +44,409 @@ export default function FlashcardsScreen() {
       const cards = await generateFlashcards(id as string);
       setFlashcards(cards);
     } catch (err: any) {
-      setError(err.message || "Failed to generate flashcards");
+      setError(err.message || 'Failed to generate flashcards');
     } finally {
       setLoading(false);
     }
   };
 
   const flipCard = () => {
-    Animated.timing(flipAnim, {
-      toValue: isFlipped ? 0 : 1,
-      duration: 300,
+    const toValue = isFlipped ? 0 : 1;
+    Animated.spring(flipAnim, {
+      toValue,
       useNativeDriver: true,
+      tension: 60,
+      friction: 8,
     }).start(() => setIsFlipped(!isFlipped));
   };
 
-  const nextCard = () => {
-    if (currentIndex < flashcards.length - 1) {
+  const advanceCard = (wasKnown: boolean) => {
+    if (wasKnown) setKnown((k) => k + 1);
+    else setReview((r) => r + 1);
+
+    const next = currentIndex + 1;
+    if (next >= flashcards.length) {
+      setSessionDone(true);
+    } else {
       setIsFlipped(false);
       flipAnim.setValue(0);
-      setCurrentIndex(prev => prev + 1);
+      setCurrentIndex(next);
     }
   };
 
-  const prevCard = () => {
-    if (currentIndex > 0) {
-      setIsFlipped(false);
-      flipAnim.setValue(0);
-      setCurrentIndex(prev => prev - 1);
-    }
-  };
+  // Flip interpolations
+  const frontRotate = flipAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] });
+  const backRotate = flipAnim.interpolate({ inputRange: [0, 1], outputRange: ['180deg', '360deg'] });
 
-  const frontInterpolate = flipAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '180deg'],
-  });
-
-  const backInterpolate = flipAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['180deg', '360deg'],
-  });
-
-  const frontAnimatedStyle = {
-    transform: [{ perspective: 1000 }, { rotateY: frontInterpolate }],
-  };
-
-  const backAnimatedStyle = {
-    transform: [{ perspective: 1000 }, { rotateY: backInterpolate }],
-  };
-
+  // ── Loading ──────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Generating intelligent flashcards...</Text>
-        <Text style={styles.loadingSubtext}>AI is extracting key concepts</Text>
-      </View>
+      <SafeAreaView style={styles.root}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Generating flashcards...</Text>
+          <Text style={styles.loadingSubtext}>AI is extracting key concepts</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
-  if (error) {
+  // ── Error ────────────────────────────────────────────────────────────────
+  if (error || flashcards.length === 0) {
     return (
-      <View style={styles.centerContainer}>
-        <Ionicons name="alert-circle-outline" size={48} color={Colors.error} />
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryBtn} onPress={loadFlashcards}>
-          <Text style={styles.retryText}>Try Again</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={styles.root}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.centered}>
+          <FontAwesome name="exclamation-circle" size={48} color={Colors.error} />
+          <Text style={styles.loadingText}>{error || 'No concepts could be extracted.'}</Text>
+          <TouchableOpacity style={styles.cyanBtn} onPress={() => router.back()}>
+            <Text style={styles.cyanBtnText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
-  if (flashcards.length === 0) {
+  // ── Session Complete ─────────────────────────────────────────────────────
+  if (sessionDone) {
     return (
-      <View style={styles.centerContainer}>
-        <Ionicons name="document-text-outline" size={48} color={Colors.textMuted} />
-        <Text style={styles.errorText}>No concepts could be extracted.</Text>
-        <TouchableOpacity style={styles.retryBtn} onPress={() => router.back()}>
-          <Text style={styles.retryText}>Go Back</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={styles.root}>
+        <Stack.Screen options={{ headerShown: false }} />
+        {/* Progress bar — full */}
+        <View style={styles.topBar}>
+          <TouchableOpacity style={styles.closeBtn} onPress={() => router.back()}>
+            <FontAwesome name="times" size={16} color={Colors.textSecondary} />
+          </TouchableOpacity>
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: '100%' }]} />
+          </View>
+          <Text style={styles.progressLabel}>{flashcards.length}/{flashcards.length}</Text>
+        </View>
+
+        <View style={styles.centered}>
+          <View style={styles.completeIcon}>
+            <FontAwesome name="check" size={28} color={Colors.success} />
+          </View>
+          <Text style={styles.completeTitle}>Session complete</Text>
+          <Text style={styles.completeSubtitle}>
+            You reviewed {flashcards.length} card{flashcards.length !== 1 ? 's' : ''}.
+          </Text>
+
+          <View style={styles.scoreRow}>
+            <View style={styles.scoreCard}>
+              <Text style={[styles.scoreValue, { color: Colors.success }]}>{known}</Text>
+              <Text style={styles.scoreLabel}>KNOWN</Text>
+            </View>
+            <View style={styles.scoreCard}>
+              <Text style={[styles.scoreValue, { color: Colors.warning }]}>{review}</Text>
+              <Text style={styles.scoreLabel}>REVIEW</Text>
+            </View>
+          </View>
+
+          <TouchableOpacity style={styles.cyanBtn} onPress={() => router.back()}>
+            <Text style={styles.cyanBtnText}>Back to note</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
+  // ── Active flashcard ─────────────────────────────────────────────────────
   const progress = (currentIndex + 1) / flashcards.length;
+  const card = flashcards[currentIndex];
 
   return (
-    <View style={styles.container}>
-      <Stack.Screen options={{ headerShown: false, title: 'Flashcards' }} />
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={Colors.text} />
+    <SafeAreaView style={styles.root}>
+      <Stack.Screen options={{ headerShown: false }} />
+
+      {/* Top bar: X + progress track + counter */}
+      <View style={styles.topBar}>
+        <TouchableOpacity style={styles.closeBtn} onPress={() => router.back()}>
+          <FontAwesome name="times" size={16} color={Colors.textSecondary} />
         </TouchableOpacity>
-        <Text style={styles.title} numberOfLines={1}>
-          {selectedNote?.title || "Flashcards"}
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+        </View>
+        <Text style={styles.progressLabel}>
+          {currentIndex + 1}/{flashcards.length}
         </Text>
-        <View style={styles.spacer} />
       </View>
 
-      {/* Progress Bar */}
-      <View style={styles.progressContainer}>
-        <View style={[styles.progressBar, { width: `${progress * 100}%` }]} />
-      </View>
-      <Text style={styles.progressText}>
-        {currentIndex + 1} of {flashcards.length}
-      </Text>
-
-      {/* Card Container */}
-      <View style={styles.cardContainer}>
-        <TouchableOpacity activeOpacity={1} onPress={flipCard} style={styles.cardWrapper}>
-          
-          {/* Front of Card */}
-          <Animated.View style={[styles.card, styles.cardFront, frontAnimatedStyle]}>
-            <LinearGradient
-              colors={Colors.gradientCard}
-              style={StyleSheet.absoluteFillObject}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            />
-            <View style={styles.cardInner}>
-              <View style={styles.cardBadge}>
-                <Text style={styles.badgeText}>CONCEPT</Text>
-              </View>
-              <Text style={styles.cardTextFront}>
-                {flashcards[currentIndex]?.front}
-              </Text>
-              <Text style={styles.tapInstruction}>Tap to reveal</Text>
-            </View>
+      {/* Card flip area */}
+      <View style={styles.cardArea}>
+        <TouchableOpacity activeOpacity={1} onPress={!isFlipped ? flipCard : undefined} style={styles.cardTouchable}>
+          {/* Question face */}
+          <Animated.View
+            style={[
+              styles.card,
+              { transform: [{ perspective: 1200 }, { rotateY: frontRotate }] },
+            ]}
+          >
+            <Text style={styles.cardBadge}>QUESTION</Text>
+            <Text style={styles.cardQuestion}>{card.front}</Text>
+            <Text style={styles.tapHint}>Tap to reveal</Text>
           </Animated.View>
 
-          {/* Back of Card */}
-          <Animated.View style={[styles.card, styles.cardBack, backAnimatedStyle]}>
-            <LinearGradient
-              colors={Colors.gradientPrimary}
-              style={StyleSheet.absoluteFillObject}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            />
-            <View style={styles.cardInner}>
-              <View style={[styles.cardBadge, { backgroundColor: 'rgba(255, 255, 255, 0.2)' }]}>
-                <Text style={[styles.badgeText, { color: '#FFF' }]}>DEFINITION</Text>
-              </View>
-              <Text style={styles.cardTextBack}>
-                {flashcards[currentIndex]?.back}
-              </Text>
-            </View>
+          {/* Answer face */}
+          <Animated.View
+            style={[
+              styles.card,
+              styles.cardBack,
+              { transform: [{ perspective: 1200 }, { rotateY: backRotate }] },
+              { borderColor: Colors.primary + '60' },
+            ]}
+          >
+            <Text style={[styles.cardBadge, { color: Colors.primary }]}>ANSWER</Text>
+            <Text style={styles.cardAnswer}>{card.back}</Text>
+            <Text style={styles.tapHint}>Swipe to review</Text>
           </Animated.View>
-
         </TouchableOpacity>
       </View>
 
       {/* Controls */}
       <View style={styles.controls}>
-        <TouchableOpacity 
-          style={[styles.actionPill, currentIndex === 0 && styles.navBtnDisabled]} 
-          onPress={prevCard}
-          disabled={currentIndex === 0}
+        {/* Review — amber outline pill */}
+        <TouchableOpacity
+          style={styles.reviewBtn}
+          onPress={() => advanceCard(false)}
           activeOpacity={0.8}
         >
-          <LinearGradient
-            colors={['rgba(99, 102, 241, 0.15)', 'rgba(99, 102, 241, 0.05)']}
-            style={StyleSheet.absoluteFillObject}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          />
-          <View style={[styles.iconCircle, { backgroundColor: 'rgba(99, 102, 241, 0.2)' }]}>
-            <Ionicons name="refresh-outline" size={20} color={Colors.primaryLight} />
-          </View>
-          <Text style={[styles.actionPillText, { color: Colors.primaryLight }]}>Review</Text>
+          <FontAwesome name="refresh" size={16} color={Colors.warning} />
+          <Text style={[styles.controlBtnText, { color: Colors.warning }]}>Review</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={[styles.actionPill, currentIndex === flashcards.length - 1 && styles.navBtnDisabled]} 
-          onPress={nextCard}
-          disabled={currentIndex === flashcards.length - 1}
+        {/* Known — green outline pill */}
+        <TouchableOpacity
+          style={styles.knownBtn}
+          onPress={() => advanceCard(true)}
           activeOpacity={0.8}
         >
-          <LinearGradient
-            colors={['rgba(99, 102, 241, 0.15)', 'rgba(99, 102, 241, 0.05)']}
-            style={StyleSheet.absoluteFillObject}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          />
-          <View style={[styles.iconCircle, { backgroundColor: 'rgba(99, 102, 241, 0.2)' }]}>
-            <Ionicons name="checkmark-outline" size={20} color={Colors.primaryLight} />
-          </View>
-          <Text style={[styles.actionPillText, { color: Colors.primaryLight }]}>Got It</Text>
+          <FontAwesome name="check" size={16} color={Colors.success} />
+          <Text style={[styles.controlBtnText, { color: Colors.success }]}>Known</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
+const CARD_HEIGHT = Dimensions.get('window').height * 0.52;
+
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
     backgroundColor: Colors.background,
   },
-  centerContainer: {
+  centered: {
     flex: 1,
-    backgroundColor: Colors.background,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
     padding: Spacing.xl,
   },
-  header: {
+
+  // Top bar
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 60,
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.sm,
     paddingBottom: Spacing.md,
+    gap: Spacing.md,
   },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: Colors.surface,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    flexShrink: 0,
   },
-  title: {
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-    color: Colors.text,
+  progressTrack: {
     flex: 1,
-    textAlign: 'center',
-    marginHorizontal: Spacing.md,
-  },
-  spacer: {
-    width: 40,
-  },
-  progressContainer: {
     height: 4,
     backgroundColor: Colors.surface,
-    marginHorizontal: Spacing.xl,
     borderRadius: 2,
     overflow: 'hidden',
-    marginTop: Spacing.sm,
   },
-  progressBar: {
+  progressFill: {
     height: '100%',
     backgroundColor: Colors.primary,
+    borderRadius: 2,
   },
-  progressText: {
-    fontSize: FontSize.xs,
+  progressLabel: {
+    fontSize: FontSize.sm,
+    fontWeight: FontWeight.semibold,
     color: Colors.textMuted,
-    textAlign: 'center',
-    marginTop: Spacing.xs,
+    flexShrink: 0,
+    minWidth: 32,
+    textAlign: 'right',
   },
-  cardContainer: {
+
+  // Card flip
+  cardArea: {
     flex: 1,
+    paddingHorizontal: Spacing.md,
     justifyContent: 'center',
-    alignItems: 'center',
-    padding: Spacing.xl,
-    width: '100%',
   },
-  cardWrapper: {
-    width: '100%',
-    maxWidth: 400,
-    height: 400,
+  cardTouchable: {
+    height: CARD_HEIGHT,
   },
   card: {
-    width: '100%',
-    height: '100%',
-    borderRadius: BorderRadius.xl,
     position: 'absolute',
-    backfaceVisibility: 'hidden',
-    overflow: 'hidden',
-    ...Shadow.lg,
+    width: '100%',
+    height: CARD_HEIGHT,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.xxl,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  cardFront: {
-    zIndex: 2,
+    borderColor: Colors.border,
+    padding: Spacing.xl,
+    backfaceVisibility: 'hidden',
+    justifyContent: 'flex-end',
   },
   cardBack: {
-    zIndex: 1,
-  },
-  cardInner: {
-    flex: 1,
-    padding: Spacing.xl,
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: Colors.surfaceElevated,
   },
   cardBadge: {
     position: 'absolute',
-    top: Spacing.lg,
-    left: Spacing.lg,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.md,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  badgeText: {
+    top: Spacing.xl,
+    left: Spacing.xl,
     fontSize: FontSize.xs,
-    color: Colors.textSecondary,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-  },
-  cardTextFront: {
-    fontSize: FontSize.xl,
-    fontWeight: '600',
-    color: Colors.text,
-    textAlign: 'center',
-    lineHeight: 32,
-  },
-  cardTextBack: {
-    fontSize: FontSize.md,
-    color: Colors.text,
-    textAlign: 'center',
-    lineHeight: 28,
-  },
-  tapInstruction: {
-    position: 'absolute',
-    bottom: Spacing.lg,
-    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
     color: Colors.textMuted,
+    letterSpacing: 1.2,
   },
+  cardQuestion: {
+    fontSize: FontSize.xxl,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+    lineHeight: 34,
+    marginBottom: Spacing.sm,
+  },
+  cardAnswer: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.regular,
+    color: Colors.text,
+    lineHeight: 26,
+    marginBottom: Spacing.sm,
+  },
+  tapHint: {
+    fontSize: FontSize.sm,
+    color: Colors.textMuted,
+    alignSelf: 'center',
+    marginTop: Spacing.sm,
+  },
+
+  // Controls
   controls: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingBottom: Spacing.xxl,
-    paddingHorizontal: Spacing.xl,
-    gap: Spacing.lg,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.xl + 10,
+    gap: Spacing.md,
   },
-  actionPill: {
+  reviewBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    overflow: 'hidden',
     gap: Spacing.sm,
+    paddingVertical: Spacing.md + 2,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1.5,
+    borderColor: Colors.warning,
+    backgroundColor: Colors.warning + '10',
   },
-  iconCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+  knownBtn: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.md + 2,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1.5,
+    borderColor: Colors.success,
+    backgroundColor: Colors.success + '10',
   },
-  actionPillText: {
+  controlBtnText: {
     fontSize: FontSize.md,
-    fontWeight: '700',
-    letterSpacing: 0.5,
+    fontWeight: FontWeight.bold,
   },
-  navBtnDisabled: {
-    opacity: 0.4,
+
+  // Session complete
+  completeIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: Colors.success + '20',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: Colors.success + '40',
+    marginBottom: Spacing.lg,
   },
+  completeTitle: {
+    fontSize: FontSize.xxl,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+    marginBottom: Spacing.sm,
+  },
+  completeSubtitle: {
+    fontSize: FontSize.md,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.xl,
+  },
+  scoreRow: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    marginBottom: Spacing.xl,
+  },
+  scoreCard: {
+    width: 120,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  scoreValue: {
+    fontSize: 36,
+    fontWeight: FontWeight.bold,
+    marginBottom: 4,
+  },
+  scoreLabel: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
+    color: Colors.textMuted,
+    letterSpacing: 1,
+  },
+  cyanBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+  },
+  cyanBtnText: {
+    color: Colors.textInverse,
+    fontWeight: FontWeight.bold,
+    fontSize: FontSize.md,
+  },
+
+  // Loading
   loadingText: {
     fontSize: FontSize.lg,
-    fontWeight: '600',
+    fontWeight: FontWeight.semibold,
     color: Colors.text,
     marginTop: Spacing.lg,
+    textAlign: 'center',
   },
   loadingSubtext: {
     fontSize: FontSize.sm,
     color: Colors.textMuted,
     marginTop: Spacing.sm,
-  },
-  errorText: {
-    fontSize: FontSize.md,
-    color: Colors.text,
     textAlign: 'center',
-    marginTop: Spacing.lg,
-    marginBottom: Spacing.xl,
-  },
-  retryBtn: {
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.md,
-    backgroundColor: Colors.primary,
-    borderRadius: BorderRadius.full,
-  },
-  retryText: {
-    fontSize: FontSize.md,
-    fontWeight: '600',
-    color: 'white',
   },
 });

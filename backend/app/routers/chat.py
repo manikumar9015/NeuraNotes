@@ -23,6 +23,27 @@ from app.models.conversation import (
 router = APIRouter()
 
 
+async def _generate_title(user_message: str, assistant_response: str) -> str:
+    """Generate a short title for a new conversation based on the first exchange."""
+    from app.services.ai_client import get_ai_client
+    ai_client = get_ai_client()
+    
+    prompt = f"""Generate a short 4-6 word title for this conversation. Output ONLY the title, no quotes.
+
+User: {user_message}
+Assistant: {assistant_response}"""
+
+    response = await ai_client.chat(
+        system_prompt="You are a title generator. Output only a short 4-6 word title.",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
+        max_tokens=20,
+    )
+    
+    title = response["content"].strip().strip('"\'*')
+    return title
+
+
 # ── Conversations ───────────────────────────────────────────
 
 @router.post("/conversations", response_model=dict, status_code=status.HTTP_201_CREATED)
@@ -242,7 +263,7 @@ async def send_message(
 
     # Update conversation title if it's the first real message
     if len(conversation_history) <= 2:
-        title = body.content[:80] + ("..." if len(body.content) > 80 else "")
+        title = await _generate_title(body.content, result["content"])
         supabase.table("conversations").update(
             {"title": title}
         ).eq("id", conversation_id).execute()
@@ -275,16 +296,22 @@ async def websocket_chat(
     - Server sends: {"type": "done", "message": {...full message...}}
     - Server sends: {"type": "error", "detail": "error message"}
     """
+    print(f"\n{'='*60}")
+    print(f"[WS DEBUG] WebSocket connection request for conversation: {conversation_id}")
     await websocket.accept()
+    print(f"[WS DEBUG] WebSocket ACCEPTED")
 
     try:
         while True:
             # Receive message from client
+            print(f"[WS DEBUG] Waiting for client message...")
             data = await websocket.receive_json()
             content = data.get("content", "")
             token = data.get("token", "")
+            print(f"[WS DEBUG] Received message: '{content[:50]}...' | Token present: {bool(token)}")
 
             if not content:
+                print(f"[WS DEBUG] ERROR: Empty message")
                 await websocket.send_json({"type": "error", "detail": "Empty message"})
                 continue
 
@@ -292,10 +319,12 @@ async def websocket_chat(
             from app.core.security import verify_token
             payload = verify_token(token)
             if not payload:
+                print(f"[WS DEBUG] ERROR: Invalid token")
                 await websocket.send_json({"type": "error", "detail": "Invalid token"})
                 continue
 
             user_id = payload.get("sub")
+            print(f"[WS DEBUG] Token valid. User ID: {user_id}")
             supabase = get_supabase_admin()
 
             # Verify conversation ownership
@@ -308,18 +337,22 @@ async def websocket_chat(
                 .execute()
             )
             if not conv.data:
+                print(f"[WS DEBUG] ERROR: Conversation not found for user {user_id}")
                 await websocket.send_json({"type": "error", "detail": "Conversation not found"})
                 continue
+            print(f"[WS DEBUG] Conversation ownership verified")
 
             # Save user message
-            supabase.table("messages").insert({
+            user_msg = supabase.table("messages").insert({
                 "conversation_id": conversation_id,
                 "role": "user",
                 "content": content,
             }).execute()
+            print(f"[WS DEBUG] User message saved to DB: {user_msg.data[0]['id']}")
 
             # Send processing indicator
             await websocket.send_json({"type": "status", "content": "Processing your request..."})
+            print(f"[WS DEBUG] Sent 'Processing' status to client")
 
             # Process through orchestrator
             history = (
@@ -334,15 +367,21 @@ async def websocket_chat(
                 {"role": m["role"], "content": m["content"]}
                 for m in (history.data or [])
             ]
+            print(f"[WS DEBUG] Loaded {len(conversation_history)} messages from history")
 
             from app.services.agent.orchestrator import orchestrate
 
             try:
+                print(f"[WS DEBUG] Calling orchestrate()...")
                 result = await orchestrate(
                     user_id=user_id,
                     message=content,
                     conversation_history=conversation_history[:-1],
                 )
+                print(f"[WS DEBUG] orchestrate() returned successfully!")
+                print(f"[WS DEBUG]   - Content length: {len(result.get('content', ''))}")
+                print(f"[WS DEBUG]   - Sources count: {len(result.get('sources', []))}")
+                print(f"[WS DEBUG]   - Has execution_plan: {bool(result.get('execution_plan'))}")
 
                 # Send response in chunks (simulating streaming)
                 response_text = result["content"]
@@ -350,24 +389,61 @@ async def websocket_chat(
                 for i in range(0, len(response_text), chunk_size):
                     chunk = response_text[i:i + chunk_size]
                     await websocket.send_json({"type": "chunk", "content": chunk})
+                print(f"[WS DEBUG] All chunks sent to client")
 
                 # Save assistant message
-                msg = supabase.table("messages").insert({
+                msg_data = {
                     "conversation_id": conversation_id,
                     "role": "assistant",
                     "content": response_text,
                     "sources": result.get("sources", []),
-                }).execute()
+                }
+                
+                # If there's an execution plan, include the subtasks
+                subtasks = []
+                if result.get("execution_plan"):
+                    subtasks = result["execution_plan"].get("subtasks", [])
+                    msg_data["subtasks"] = subtasks
+                    
+                print(f"[WS DEBUG] Saving assistant message to DB...")
+                msg = supabase.table("messages").insert(msg_data).execute()
+                print(f"[WS DEBUG] Assistant message saved: {msg.data[0]['id']}")
 
                 # Send done signal
+                assistant_msg_response = msg.data[0]
+                if subtasks and "subtasks" not in assistant_msg_response:
+                    assistant_msg_response["subtasks"] = subtasks
+
                 await websocket.send_json({
                     "type": "done",
-                    "message": msg.data[0],
+                    "user_message": user_msg.data[0],
+                    "assistant_message": assistant_msg_response,
                     "sources": result.get("sources", []),
                 })
+                print(f"[WS DEBUG] 'done' signal sent to client. SUCCESS!")
+
+                # Update conversation title if it's the first real message
+                if len(conversation_history) <= 2:
+                    print(f"[WS DEBUG] Generating title for new conversation...")
+                    title = await _generate_title(content, response_text)
+                    supabase.table("conversations").update(
+                        {"title": title}
+                    ).eq("id", conversation_id).execute()
+                    print(f"[WS DEBUG] Title set: '{title}'")
 
             except Exception as e:
+                import traceback
+                print(f"\n[WS DEBUG] !!!!! EXCEPTION IN ORCHESTRATOR !!!!!")
+                print(f"[WS DEBUG] Error type: {type(e).__name__}")
+                print(f"[WS DEBUG] Error message: {str(e)}")
+                traceback.print_exc()
                 await websocket.send_json({"type": "error", "detail": str(e)})
 
     except WebSocketDisconnect:
-        pass
+        print(f"[WS DEBUG] Client disconnected")
+    except Exception as e:
+        import traceback
+        print(f"\n[WS DEBUG] !!!!! OUTER EXCEPTION !!!!!")
+        print(f"[WS DEBUG] Error type: {type(e).__name__}")
+        print(f"[WS DEBUG] Error message: {str(e)}")
+        traceback.print_exc()

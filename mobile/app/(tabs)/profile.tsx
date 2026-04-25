@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -6,15 +6,28 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  Switch,
+  SafeAreaView,
 } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { Colors, Spacing, BorderRadius, FontSize, FontWeight, Shadow } from '@/constants/theme';
+import { useRouter } from 'expo-router';
+import { Colors, Spacing, BorderRadius, FontSize, FontWeight } from '@/constants/theme';
 import { useAuthStore } from '@/stores/authStore';
 import { useNotesStore } from '@/stores/notesStore';
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const { user, logout } = useAuthStore();
   const { total } = useNotesStore();
+
+  // Local toggle state for integrations/prefs
+  const [gmailOn, setGmailOn] = useState(true);
+  const [calendarOn, setCalendarOn] = useState(false);
+  const [driveOn, setDriveOn] = useState(false);
+  const [digestOn, setDigestOn] = useState(true);
+  const [hapticOn, setHapticOn] = useState(true);
+
+  const firstName = user?.name?.split(' ')[0] || 'You';
 
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
@@ -24,131 +37,285 @@ export default function ProfileScreen() {
   };
 
   const stats = [
-    { label: 'Total Notes', value: total.toString(), icon: 'file-text-o' as const, color: Colors.primary },
-    { label: 'AI Chats', value: '—', icon: 'comments' as const, color: Colors.accent },
-    { label: 'Tags Used', value: '—', icon: 'tags' as const, color: Colors.success },
+    { label: 'NOTES', value: total },
+    { label: 'REVIEWS', value: 38 },
+    { label: 'CARDS', value: 318 },
   ];
 
-  const settings = [
-    { label: 'API Server', value: 'localhost:8000', icon: 'server' as const },
-    { label: 'AI Provider', value: 'Groq (Free)', icon: 'bolt' as const },
-    { label: 'Embedding Model', value: 'gemini-embedding-001', icon: 'cube' as const },
-    { label: 'Offline Mode', value: 'Coming soon', icon: 'cloud-download' as const },
+  const integrations = [
+    {
+      icon: 'envelope' as const,
+      iconBg: '#FF4444',
+      name: 'Gmail',
+      desc: 'Draft & send emails on your behalf',
+      value: gmailOn,
+      onToggle: setGmailOn,
+    },
+    {
+      icon: 'calendar' as const,
+      iconBg: '#4285F4',
+      name: 'Google Calendar',
+      desc: 'Create events from notes',
+      value: calendarOn,
+      onToggle: setCalendarOn,
+    },
+    {
+      icon: 'cloud' as const,
+      iconBg: '#34A853',
+      name: 'Google Drive',
+      desc: 'Index docs into your brain',
+      value: driveOn,
+      onToggle: setDriveOn,
+    },
+  ];
+
+  const preferences = [
+    {
+      icon: 'sun-o' as const,
+      iconBg: Colors.primary + '30',
+      name: 'Daily digest',
+      desc: '07:30 every morning',
+      value: digestOn,
+      onToggle: setDigestOn,
+    },
+    {
+      icon: 'heartbeat' as const,
+      iconBg: Colors.primary + '30',
+      name: 'Haptic feedback',
+      desc: 'Feel every capture',
+      value: hapticOn,
+      onToggle: setHapticOn,
+    },
+  ];
+
+  const shortcuts = [
+    {
+      icon: 'clone' as const,
+      iconBg: '#F59E0B',
+      name: 'Flashcards',
+      desc: "Review today's 12 cards",
+      onPress: () => router.push('/flashcards' as any),
+    },
+    {
+      icon: 'book' as const,
+      iconBg: '#F59E0B',
+      name: 'Daily digest',
+      desc: 'Your 3-min catch-up',
+      onPress: () => router.push('/digest' as any),
+    },
+    {
+      icon: 'cog' as const,
+      iconBg: '#F59E0B',
+      name: 'Account settings',
+      desc: 'Keys, privacy, export',
+      onPress: () => {},
+    },
   ];
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* User Card */}
-      {!user ? (
+    <SafeAreaView style={styles.root}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* YOU label */}
+        <Text style={styles.youLabel}>YOU</Text>
+        <Text style={styles.heading}>Profile</Text>
+
+        {/* User card */}
         <View style={styles.userCard}>
-          <Text style={styles.userName}>Not logged in</Text>
-          <Text style={styles.userEmail}>Sign in to use NeuraNotes</Text>
-          <TouchableOpacity 
-            style={[styles.logoutButton, { backgroundColor: Colors.primary + '15', borderColor: Colors.primary + '30', marginTop: Spacing.md }]} 
-            onPress={useAuthStore.getState().devLogin}
-          >
-            <FontAwesome name="check-circle" size={16} color={Colors.primary} />
-            <Text style={[styles.logoutText, { color: Colors.primary }]}>Quick Test Login</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <View style={styles.userCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {user?.name?.charAt(0)?.toUpperCase() || '?'}
-            </Text>
+          <View style={styles.avatarCircle}>
+            {user?.avatar_url ? (
+              <Text style={styles.avatarInitial}>{firstName.charAt(0).toUpperCase()}</Text>
+            ) : (
+              <Text style={styles.avatarInitial}>{firstName.charAt(0).toUpperCase()}</Text>
+            )}
           </View>
-          <Text style={styles.userName}>{user?.name || 'NeuraNotes User'}</Text>
-          <Text style={styles.userEmail}>{user?.email || 'No email'}</Text>
-        </View>
-      )}
-
-      {/* Stats */}
-      <View style={styles.statsRow}>
-        {stats.map((stat) => (
-          <View key={stat.label} style={styles.statCard}>
-            <FontAwesome name={stat.icon} size={20} color={stat.color} />
-            <Text style={styles.statValue}>{stat.value}</Text>
-            <Text style={styles.statLabel}>{stat.label}</Text>
+          <View style={styles.userInfo}>
+            <Text style={styles.userName}>{user?.name || 'NeuraNotes User'}</Text>
+            <Text style={styles.userEmail}>{user?.email || 'alex@neuranotes.app'}</Text>
+            {/* Pro badge */}
+            <View style={styles.proBadge}>
+              <FontAwesome name="bolt" size={10} color={Colors.warning} />
+              <Text style={styles.proText}>NEURA PRO</Text>
+            </View>
           </View>
-        ))}
-      </View>
-
-      {/* Settings */}
-      <Text style={styles.sectionTitle}>Configuration</Text>
-      {settings.map((item) => (
-        <View key={item.label} style={styles.settingRow}>
-          <View style={styles.settingLeft}>
-            <FontAwesome name={item.icon} size={16} color={Colors.textSecondary} />
-            <Text style={styles.settingLabel}>{item.label}</Text>
-          </View>
-          <Text style={styles.settingValue}>{item.value}</Text>
         </View>
-      ))}
 
-      {/* About */}
-      <Text style={styles.sectionTitle}>About</Text>
-      <View style={styles.aboutCard}>
-        <Text style={styles.aboutName}>NeuraNotes v1.0</Text>
-        <Text style={styles.aboutDescription}>
-          Personal Second Brain Agent{'\n'}
-          Built with React Native + FastAPI + Groq
-        </Text>
-        <Text style={styles.aboutCost}>💰 Total cost: $0/month</Text>
-      </View>
+        {/* Stats row */}
+        <View style={styles.statsRow}>
+          {stats.map((s) => (
+            <View key={s.label} style={styles.statCard}>
+              <Text style={styles.statValue}>{s.value}</Text>
+              <Text style={styles.statLabel}>{s.label}</Text>
+            </View>
+          ))}
+        </View>
 
-      {/* Logout */}
-      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-        <FontAwesome name="sign-out" size={16} color={Colors.error} />
-        <Text style={styles.logoutText}>Logout</Text>
-      </TouchableOpacity>
-    </ScrollView>
+        {/* Agent Integrations */}
+        <Text style={styles.sectionLabel}>AGENT INTEGRATIONS</Text>
+        <View style={styles.settingGroup}>
+          {integrations.map((item, idx) => (
+            <View key={item.name}>
+              <View style={styles.settingRow}>
+                <View style={[styles.settingIconBadge, { backgroundColor: item.iconBg + '30' }]}>
+                  <FontAwesome name={item.icon} size={16} color={item.iconBg} />
+                </View>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingName}>{item.name}</Text>
+                  <Text style={styles.settingDesc}>{item.desc}</Text>
+                </View>
+                <Switch
+                  value={item.value}
+                  onValueChange={item.onToggle}
+                  trackColor={{ false: Colors.border, true: Colors.primary }}
+                  thumbColor={Colors.text}
+                  ios_backgroundColor={Colors.border}
+                />
+              </View>
+              {idx < integrations.length - 1 && <View style={styles.divider} />}
+            </View>
+          ))}
+        </View>
+
+        {/* Preferences */}
+        <Text style={styles.sectionLabel}>PREFERENCES</Text>
+        <View style={styles.settingGroup}>
+          {preferences.map((item, idx) => (
+            <View key={item.name}>
+              <View style={styles.settingRow}>
+                <View style={[styles.settingIconBadge, { backgroundColor: Colors.primary + '20' }]}>
+                  <FontAwesome name={item.icon} size={16} color={Colors.primary} />
+                </View>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingName}>{item.name}</Text>
+                  <Text style={styles.settingDesc}>{item.desc}</Text>
+                </View>
+                <Switch
+                  value={item.value}
+                  onValueChange={item.onToggle}
+                  trackColor={{ false: Colors.border, true: Colors.primary }}
+                  thumbColor={Colors.text}
+                  ios_backgroundColor={Colors.border}
+                />
+              </View>
+              {idx < preferences.length - 1 && <View style={styles.divider} />}
+            </View>
+          ))}
+        </View>
+
+        {/* Shortcuts */}
+        <Text style={styles.sectionLabel}>SHORTCUTS</Text>
+        <View style={styles.settingGroup}>
+          {shortcuts.map((item, idx) => (
+            <View key={item.name}>
+              <TouchableOpacity style={styles.settingRow} onPress={item.onPress} activeOpacity={0.7}>
+                <View style={[styles.settingIconBadge, { backgroundColor: item.iconBg + '30' }]}>
+                  <FontAwesome name={item.icon} size={16} color={item.iconBg} />
+                </View>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingName}>{item.name}</Text>
+                  <Text style={styles.settingDesc}>{item.desc}</Text>
+                </View>
+                <FontAwesome name="chevron-right" size={13} color={Colors.textMuted} />
+              </TouchableOpacity>
+              {idx < shortcuts.length - 1 && <View style={styles.divider} />}
+            </View>
+          ))}
+        </View>
+
+        {/* Logout */}
+        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
+          <FontAwesome name="sign-out" size={16} color={Colors.error} />
+          <Text style={styles.logoutText}>Sign out</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
+  root: { flex: 1, backgroundColor: Colors.background },
+  container: { flex: 1 },
+  content: { padding: Spacing.md, paddingBottom: 100 },
+
+  // Header
+  youLabel: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
+    color: Colors.textMuted,
+    letterSpacing: 1.4,
+    marginBottom: 2,
+    marginTop: Spacing.sm,
   },
-  content: {
-    padding: Spacing.md,
-    paddingBottom: Spacing.xxl,
-  },
-  userCard: {
-    alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.xl,
-    marginBottom: Spacing.lg,
-    borderWidth: 1,
-    borderColor: Colors.primary + '30',
-    ...Shadow.md,
-  },
-  avatar: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.md,
-  },
-  avatarText: {
-    fontSize: FontSize.xxl,
+  heading: {
+    fontSize: 32,
     fontWeight: FontWeight.bold,
     color: Colors.text,
+    marginBottom: Spacing.lg,
   },
-  userName: {
+
+  // User card
+  userCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: Spacing.md,
+  },
+  avatarCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: Colors.backgroundTertiary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Colors.primary + '50',
+    flexShrink: 0,
+  },
+  avatarInitial: {
     fontSize: FontSize.xl,
     fontWeight: FontWeight.bold,
     color: Colors.text,
-    marginBottom: Spacing.xs,
+  },
+  userInfo: { flex: 1 },
+  userName: {
+    fontSize: FontSize.lg,
+    fontWeight: FontWeight.bold,
+    color: Colors.text,
+    marginBottom: 2,
   },
   userEmail: {
     fontSize: FontSize.sm,
     color: Colors.textMuted,
+    marginBottom: Spacing.sm,
   },
+  proBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.warning + '20',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    borderColor: Colors.warning + '40',
+    alignSelf: 'flex-start',
+  },
+  proText: {
+    fontSize: 10,
+    fontWeight: FontWeight.bold,
+    color: Colors.warning,
+    letterSpacing: 0.8,
+  },
+
+  // Stats
   statsRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
@@ -156,91 +323,87 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    alignItems: 'center',
     backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
+    borderRadius: BorderRadius.lg,
     padding: Spacing.md,
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: Colors.border,
   },
   statValue: {
-    fontSize: FontSize.xl,
+    fontSize: FontSize.xxl,
     fontWeight: FontWeight.bold,
     color: Colors.text,
-    marginTop: Spacing.sm,
+    marginBottom: 2,
   },
   statLabel: {
     fontSize: FontSize.xs,
     color: Colors.textMuted,
-    marginTop: 2,
-  },
-  sectionTitle: {
-    fontSize: FontSize.md,
-    fontWeight: FontWeight.semibold,
-    color: Colors.textSecondary,
-    marginBottom: Spacing.md,
-    textTransform: 'uppercase',
+    fontWeight: FontWeight.medium,
     letterSpacing: 0.5,
   },
-  settingRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.sm,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  settingLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-  },
-  settingLabel: {
-    fontSize: FontSize.md,
-    color: Colors.text,
-  },
-  settingValue: {
-    fontSize: FontSize.sm,
+
+  // Section label
+  sectionLabel: {
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.bold,
     color: Colors.textMuted,
+    letterSpacing: 1.2,
+    marginBottom: Spacing.sm,
   },
-  aboutCard: {
+
+  // Setting group
+  settingGroup: {
     backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.lg,
+    borderRadius: BorderRadius.xl,
     marginBottom: Spacing.xl,
     borderWidth: 1,
     borderColor: Colors.border,
+    overflow: 'hidden',
   },
-  aboutName: {
-    fontSize: FontSize.lg,
-    fontWeight: FontWeight.bold,
-    color: Colors.primary,
-    marginBottom: Spacing.sm,
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    gap: Spacing.md,
   },
-  aboutDescription: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-    lineHeight: 20,
-    marginBottom: Spacing.sm,
+  settingIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
-  aboutCost: {
-    fontSize: FontSize.sm,
-    color: Colors.success,
+  settingInfo: { flex: 1 },
+  settingName: {
+    fontSize: FontSize.md,
     fontWeight: FontWeight.semibold,
+    color: Colors.text,
+    marginBottom: 2,
   },
-  logoutButton: {
+  settingDesc: {
+    fontSize: FontSize.sm,
+    color: Colors.textMuted,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: Colors.border,
+    marginLeft: 40 + Spacing.md * 2,
+  },
+
+  // Logout
+  logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.sm,
     backgroundColor: Colors.error + '15',
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
+    borderRadius: BorderRadius.full,
+    padding: Spacing.md,
     borderWidth: 1,
     borderColor: Colors.error + '30',
+    marginBottom: Spacing.md,
   },
   logoutText: {
     fontSize: FontSize.md,

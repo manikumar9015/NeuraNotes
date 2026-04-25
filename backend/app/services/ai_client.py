@@ -37,7 +37,7 @@ class GroqClient(BaseAIClient):
     """
 
     PRIMARY_MODEL = "llama-3.3-70b-versatile"      # 12K req/day, 128K context
-    SECONDARY_MODEL = "openai/gpt-oss-120b"         # 8K req/day, 200K context
+    SECONDARY_MODEL = "openai/gpt-oss-120b"         # 8K req/day, 200K context (auto-fallback)
     WHISPER_MODEL = "whisper-large-v3"
 
     def __init__(self):
@@ -60,10 +60,11 @@ class GroqClient(BaseAIClient):
         Args:
             use_secondary: If True, uses GPT-OSS 120B instead of Llama 3.3 70B
         """
-        from groq import Groq
+        from groq import Groq, RateLimitError, BadRequestError, PermissionDeniedError
 
         client = Groq(api_key=settings.groq_api_key)
         model = self.SECONDARY_MODEL if use_secondary else self.PRIMARY_MODEL
+        fallback_model = self.PRIMARY_MODEL if use_secondary else self.SECONDARY_MODEL
 
         all_messages = [{"role": "system", "content": system_prompt}] + messages
 
@@ -81,8 +82,19 @@ class GroqClient(BaseAIClient):
         if response_format:
             kwargs["response_format"] = response_format
 
-        response = client.chat.completions.create(**kwargs)
+        print(f"[AI DEBUG] Calling Groq API with model='{model}' | messages={len(all_messages)} | max_tokens={max_tokens}")
+        try:
+            response = client.chat.completions.create(**kwargs)
+            print(f"[AI DEBUG] Primary model '{model}' succeeded!")
+        except (RateLimitError, PermissionDeniedError, BadRequestError) as e:
+            print(f"[AI DEBUG] Primary model '{model}' FAILED: {type(e).__name__}: {e}")
+            print(f"[AI DEBUG] Falling back to '{fallback_model}'...")
+            kwargs["model"] = model = fallback_model
+            response = client.chat.completions.create(**kwargs)
+            print(f"[AI DEBUG] Fallback model '{model}' succeeded!")
+
         choice = response.choices[0]
+        print(f"[AI DEBUG] Response: model={model} | content_len={len(choice.message.content or '')} | usage={response.usage}")
 
         result = {
             "content": choice.message.content or "",

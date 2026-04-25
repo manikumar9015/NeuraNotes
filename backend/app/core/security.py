@@ -55,9 +55,17 @@ def verify_token(token: str, expected_type: str = "access") -> Optional[dict]:
         payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
         token_type = payload.get("type")
         if token_type != expected_type:
+            print(f"[AUTH DEBUG] Token type mismatch: got '{token_type}', expected '{expected_type}'")
             return None
+        exp = payload.get("exp")
+        if exp:
+            from datetime import datetime, timezone
+            exp_dt = datetime.fromtimestamp(exp, tz=timezone.utc)
+            now = datetime.now(timezone.utc)
+            print(f"[AUTH DEBUG] Token valid! Expires: {exp_dt} | Now: {now} | Remaining: {exp_dt - now}")
         return payload
-    except JWTError:
+    except JWTError as e:
+        print(f"[AUTH DEBUG] JWT decode FAILED: {type(e).__name__}: {e}")
         return None
 
 

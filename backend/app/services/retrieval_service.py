@@ -127,7 +127,7 @@ async def retrieve_context_for_agent(
         query=query,
         user_id=user_id,
         limit=limit,
-        similarity_threshold=0.35,  # Slightly lower threshold for agent context
+        similarity_threshold=0.60,  # Stricter threshold to avoid fetching irrelevant notes
     )
 
     # Format for agent context

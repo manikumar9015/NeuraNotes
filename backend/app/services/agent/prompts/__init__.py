@@ -17,7 +17,6 @@ from functools import lru_cache
 PROMPTS_DIR = os.path.dirname(__file__)
 
 
-@lru_cache(maxsize=None)
 def load_prompt(name: str) -> str:
     """
     Load a prompt template from the prompts directory by name (without extension).
